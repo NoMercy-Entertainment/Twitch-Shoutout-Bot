@@ -28,7 +28,7 @@ public class ManageController : BaseController
     {
         string? userId = User.UserId();
         
-        List<SimpleChannel> channels  = _db.Channels
+        List<SimpleChannel> channels = _db.Channels
             .Where(c => c.Id == userId || c.ChannelModerators.Any(m => m.UserId == userId))
             .Include(c => c.User)
             .Include(c => c.ChannelModerators)

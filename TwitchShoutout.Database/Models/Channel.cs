@@ -30,9 +30,9 @@ public sealed class SimpleChannel
     [JsonProperty("id")] public string Id { get; set; } 
     [JsonProperty("name")] public string Name { get; set; }
     [JsonProperty("enabled")] public bool Enabled { get; set; }
-    [JsonProperty("broadcaster")] public new SimpleUser User { get; set; }
-    [JsonProperty("shoutouts")] public new IEnumerable<SimpleShoutout> Shoutouts { get; set; }
-    [JsonProperty("moderated_for")] public new IEnumerable<SimpleChannelModerator> ChannelModerators { get; set; }
+    [JsonProperty("broadcaster")] public SimpleUser User { get; set; }
+    [JsonProperty("shoutouts")] public IEnumerable<SimpleShoutout> Shoutouts { get; set; }
+    [JsonProperty("moderated_for")] public IEnumerable<SimpleChannelModerator> ChannelModerators { get; set; }
     
     public SimpleChannel(Channel channel)
     {

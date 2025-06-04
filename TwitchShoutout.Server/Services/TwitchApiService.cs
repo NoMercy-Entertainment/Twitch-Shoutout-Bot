@@ -224,9 +224,6 @@ public class TwitchApiService
                 OfflineImageUrl = newUser.OfflineImageUrl,
                 Color = newUser.Color,
                 BroadcasterType = newUser.BroadcasterType,
-                AccessToken = newUser.AccessToken,
-                RefreshToken = newUser.RefreshToken,
-                TokenExpiry = newUser.TokenExpiry,
             })
             .RunAsync();
 

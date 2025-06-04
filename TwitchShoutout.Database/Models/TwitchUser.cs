@@ -62,13 +62,25 @@ public class SimpleUser
     [JsonProperty("id")] public string Id { get; set; }
     [JsonProperty("user_name")] public string Username { get; set; }
     [JsonProperty("display_name")] public string DisplayName { get; set; }
+    [JsonProperty("description")] public string Description { get; set; }
     [JsonProperty("profile_image_url")] public string ProfileImageUrl { get; set; }
+    [JsonProperty("offline_image_url")]  public string OfflineImageUrl { get; set; }
+    [JsonProperty("color")] public string? Color { get; set; }
+    [JsonProperty("broadcaster_type")] public string BroadcasterType { get; set; }
+    [JsonProperty("enabled")] public bool Enabled { get; set; }
+    [JsonProperty("is_live")] public bool IsLive { get; set; }
     
     public SimpleUser(TwitchUser user)
     {
         Id = user.Id;
         Username = user.Username;
         DisplayName = user.DisplayName;
+        Description = user.Description;
         ProfileImageUrl = user.ProfileImageUrl;
+        OfflineImageUrl = user.OfflineImageUrl;
+        Color = user.Color;
+        BroadcasterType = user.BroadcasterType;
+        Enabled = user.Enabled;
+        IsLive = user.IsLive;
     }
 }
