@@ -16,6 +16,7 @@ public class UserDto
     [JsonProperty("enabled")] public bool Enabled { get; set; }
     [JsonProperty("is_live")] public bool IsLive { get; set; }
     [JsonProperty("channel")] public SimpleChannel SimpleChannel { get; set; }
+    [JsonProperty("pronoun")] public Pronoun? Pronoun { get; set; }
 
     public UserDto()
     {
@@ -35,6 +36,7 @@ public class UserDto
         Enabled = user.Enabled;
         IsLive = user.IsLive;
         SimpleChannel = new(user.Channel);
+        Pronoun = user.Pronoun;
     }
 }
 

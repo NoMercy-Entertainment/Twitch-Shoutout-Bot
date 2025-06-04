@@ -55,6 +55,19 @@ public class TwitchUser
     public DateTime? TokenExpiry { get; set; }
 
     [JsonProperty("channel")] public virtual Channel Channel { get; set; } = null!;
+    
+    [JsonProperty("pronoun")] public string? PronounData { get; set; }
+
+    [NotMapped]
+    public Pronoun? Pronoun
+    {
+        get => !string.IsNullOrEmpty(PronounData) 
+            ? JsonConvert.DeserializeObject<Pronoun>(PronounData) 
+            : null;
+        init => PronounData = value != null 
+            ? JsonConvert.SerializeObject(value) 
+            : null;
+    }
 }
 
 public class SimpleUser
@@ -69,6 +82,7 @@ public class SimpleUser
     [JsonProperty("broadcaster_type")] public string BroadcasterType { get; set; }
     [JsonProperty("enabled")] public bool Enabled { get; set; }
     [JsonProperty("is_live")] public bool IsLive { get; set; }
+    [JsonProperty("pronoun")] public Pronoun? Pronoun { get; set; }
     
     public SimpleUser(TwitchUser user)
     {
@@ -82,5 +96,6 @@ public class SimpleUser
         BroadcasterType = user.BroadcasterType;
         Enabled = user.Enabled;
         IsLive = user.IsLive;
+        Pronoun = user.Pronoun;
     }
 }

@@ -52,9 +52,11 @@ public static class ServiceConfiguration
     {
         builder.Services.AddSingleton<TokenStore>();
         builder.Services.AddSingleton<BotDbContext>();
+        builder.Services.AddSingleton<PronounService>();
         builder.Services.AddSingleton<TwitchApiService>();
         builder.Services.AddSingleton<TwitchAuthService>();
         builder.Services.AddHostedService<Worker>();
+        builder.Services.AddSingleton<Worker>();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddDirectoryBrowser();
         builder.Services.AddResponseCompression(options => options.EnableForHttps = true);

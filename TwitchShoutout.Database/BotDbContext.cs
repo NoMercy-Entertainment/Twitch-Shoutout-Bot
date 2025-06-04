@@ -65,11 +65,19 @@ public class BotDbContext : DbContext
             .HasConversion(
                 v => TokenStore.EncryptToken(v),
                 v =>  TokenStore.DecryptToken(v));
+        
+        modelBuilder.Entity<ChannelInfo>()
+            .HasOne(ci => ci.Channel)
+            .WithOne(c => c.Info)
+            .HasForeignKey<ChannelInfo>(ci => ci.Id);
     }
     
     public DbSet<TwitchUser> TwitchUsers { get; set; } = null!;
     public DbSet<Channel> Channels { get; set; }
     // public DbSet<Command> Commands { get; set; }
     public DbSet<Shoutout> Shoutouts { get; set; }
-    public DbSet<ChannelModerators> ChannelModerators { get; set; }
+    public DbSet<ChannelModerator> ChannelModerators { get; set; }
+    public DbSet<Pronoun> Pronouns { get; set; }
+    public DbSet<ChannelInfo> ChannelInfos { get; set; } = null!;
+
 }

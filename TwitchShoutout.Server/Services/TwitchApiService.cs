@@ -17,11 +17,15 @@ public class TwitchApiService
 {
     private static BotDbContext DbContext { get; set; } = null!;
     private readonly RestClient _client;
+    private readonly PronounService _pronounService;
 
-    public TwitchApiService(BotDbContext dbContext)
+    public TwitchApiService(BotDbContext dbContext, PronounService pronounService)
     {
         DbContext = dbContext;
         _client = new(Globals.TwitchApiUrl);
+        
+        _pronounService = pronounService;
+        _pronounService.LoadPronouns().Wait();
         
         string botId = GetUser(Globals.BotUsername).Result?.Id ?? throw new("Failed to fetch bot user id.");
         Globals.BotId = botId;
@@ -37,20 +41,29 @@ public class TwitchApiService
         return request;
     }
 
-    private async Task<T> ExecuteTwitchRequest<T>(RestRequest request) where T : class
+    private async Task<T?> ExecuteTwitchRequest<T>(RestRequest request) where T : class
     {
         RestResponse response = await _client.ExecuteAsync(request);
-        
-        if (response is { IsSuccessful: false, Content: not null })
-        {
-            TwitchErrorResponse? errorResponse = response.Content.FromJson<TwitchErrorResponse>();
-            throw new(errorResponse?.Message ?? "Failed to execute Twitch API request.");
-        }
 
-        T? result = response.Content?.FromJson<T>();
-        if (result == null) throw new("Failed to parse API response.");
+        if (response.IsSuccessful)
+        {
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                // Handle 204 No Content: return null, indicating success without content
+                return null;
+            }
+
+            // Attempt to deserialize content for other successful status codes
+            T? result = response.Content?.FromJson<T>();
+            if (result == null && response.Content != null)
+            {
+                throw new("Failed to parse API response.");
+            }
+            return result;
+        }
         
-        return result;
+        TwitchErrorResponse? errorResponse = response.Content?.FromJson<TwitchErrorResponse>();
+        throw new(errorResponse?.Message ?? "Failed to execute Twitch API request.");
     }
 
     public async Task<UserInfo?> GetUser(string? userId = null)
@@ -62,8 +75,8 @@ public class TwitchApiService
             request.AddQueryParameter(userId.All(char.IsDigit) ? "id" : "login", userId);
         }
 
-        UserInfoResponse response = await ExecuteTwitchRequest<UserInfoResponse>(request);
-        return response.Data.FirstOrDefault();
+        UserInfoResponse? response = await ExecuteTwitchRequest<UserInfoResponse>(request);
+        return response?.Data.FirstOrDefault();
     }
 
     public async Task<List<UserInfo>?> GetUsers(string[] userIds)
@@ -73,8 +86,8 @@ public class TwitchApiService
         RestRequest request = CreateTwitchRequest("users");
         userIds.ToList().ForEach(id => request.AddQueryParameter("user_id", id));
 
-        UserInfoResponse response = await ExecuteTwitchRequest<UserInfoResponse>(request);
-        return response.Data;
+        UserInfoResponse? response = await ExecuteTwitchRequest<UserInfoResponse>(request);
+        return response?.Data;
     }
 
     public async Task<GetUserChatColorResponse?> BotGetUserChatColors(string[] userIds)
@@ -101,12 +114,42 @@ public class TwitchApiService
 
         await ExecuteTwitchRequest<object>(request);
     }
+    
+    private async Task<ChannelInfo?> FetchChannelInfo(string broadcasterId, TokenResponse? tokenResponse)
+    {
+        RestRequest request = CreateTwitchRequest($"channels?broadcaster_id={broadcasterId}", Method.Get, tokenResponse);
+        ChannelInfoResponse? response = await ExecuteTwitchRequest<ChannelInfoResponse>(request);
+    
+        ChannelInfoDto? dto = response?.Data.FirstOrDefault();
+        if (dto == null) return null;
+
+        return new()
+        {
+            Id = dto.BroadcasterId,
+            Language = dto.Language,
+            GameId = dto.GameId,
+            GameName = dto.GameName,
+            Title = dto.Title,
+            Delay = dto.Delay,
+            Tags = dto.Tags,
+            ContentLabels = dto.ContentLabels,
+            IsBrandedContent = dto.IsBrandedContent
+        };
+    }
 
     public async Task<TwitchUser> FetchUser(TokenResponse? tokenResponse = null, string? countryCode = null, string? id = null, bool? enabled = false)
     {
         UserInfo userInfo = await GetUser(id) ?? throw new("Failed to fetch user information.");
         TwitchUser user = await CreateTwitchUser(userInfo, tokenResponse, countryCode, enabled ?? false);
-        await UpsertUserData(user);
+        
+        ChannelInfo? channelInfo = await FetchChannelInfo(userInfo.Id, tokenResponse);
+        if (channelInfo != null)
+        {
+            user.Channel.Info = channelInfo;
+        }
+
+        await UpsertUserData(user, enabled ?? false);
+        
         return user;
     }
 
@@ -115,7 +158,7 @@ public class TwitchApiService
         RestRequest request = CreateTwitchRequest("moderation/channels", Method.Get, tokenResponse);
         request.AddParameter("user_id", userInfoId);
 
-        ChannelResponse moderators = await ExecuteTwitchRequest<ChannelResponse>(request);
+        ChannelResponse? moderators = await ExecuteTwitchRequest<ChannelResponse>(request);
         await UpsertModerators(userInfoId, moderators);
     }
 
@@ -131,8 +174,10 @@ public class TwitchApiService
 
         GetUserChatColorResponse? colors = await BotGetUserChatColors([userInfo.Id]);
         string color = colors?.Data.First().Color ?? "#9146FF";
+        
+        Pronoun? pronoun = await _pronounService.GetUserPronoun(userInfo.Login);
 
-        return new()
+        TwitchUser user = new()
         {
             Id = userInfo.Id,
             Username = userInfo.Login,
@@ -146,16 +191,23 @@ public class TwitchApiService
             RefreshToken = tokenResponse?.RefreshToken,
             TokenExpiry = tokenResponse?.ExpiresIn != null ? DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn) : null,
             Color = color,
+            Pronoun = pronoun,
             Channel = new()
             {
                 Id = userInfo.Id,
                 Name = userInfo.Login,
-                Enabled = enabled
             }
         };
+
+        if (enabled)
+        {
+            user.Channel.Enabled = true;
+        }
+
+        return user;
     }
 
-    private async Task UpsertUserData(TwitchUser user)
+    private async Task UpsertUserData(TwitchUser user, bool enabled = false)
     {
         await DbContext.TwitchUsers.Upsert(user)
             .On(u => u.Id)
@@ -167,31 +219,49 @@ public class TwitchApiService
                 OfflineImageUrl = newUser.OfflineImageUrl,
                 Color = newUser.Color,
                 BroadcasterType = newUser.BroadcasterType,
+                PronounData = newUser.PronounData,
             })
             .RunAsync();
 
         await DbContext.Channels.Upsert(user.Channel)
             .On(c => c.Id)
-            .WhenMatched((_, newChannel) => new()
+            .WhenMatched((oldChannel, newChannel) => new()
             {
                 Name = newChannel.Name,
-                Enabled = newChannel.Enabled,
+                Enabled = enabled 
+                    ? newChannel.Enabled 
+                    : oldChannel.Enabled,
+            })
+            .RunAsync();
+        
+        await DbContext.ChannelInfos.Upsert(user.Channel.Info)
+            .On(c => c.Id)
+            .WhenMatched((_, newInfo) => new()
+            {
+                Language = newInfo.Language,
+                GameId = newInfo.GameId,
+                GameName = newInfo.GameName,
+                Title = newInfo.Title,
+                Delay = newInfo.Delay,
+                TagsJson = newInfo.TagsJson,
+                LabelsJson = newInfo.LabelsJson,
+                IsBrandedContent = newInfo.IsBrandedContent
             })
             .RunAsync();
     }
 
-    private async Task UpsertModerators(string channelId, ChannelResponse moderators)
+    private async Task UpsertModerators(string channelId, ChannelResponse? moderators)
     {
         foreach (ChannelData channelData in moderators.Data)
         {
             TwitchUser moderatorInfo = await FetchUser(id: channelData.Id);
-            ChannelModerators channelModerators = new()
+            ChannelModerator channelModerator = new()
             {
                 ChannelId = channelId,
                 UserId = moderatorInfo.Id,
             };
 
-            await DbContext.ChannelModerators.Upsert(channelModerators)
+            await DbContext.ChannelModerators.Upsert(channelModerator)
                 .On(m => new { m.ChannelId, m.UserId })
                 .WhenMatched((_, newModerator) => new()
                 {

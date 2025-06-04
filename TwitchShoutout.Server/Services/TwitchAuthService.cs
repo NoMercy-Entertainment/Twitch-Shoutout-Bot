@@ -5,31 +5,26 @@ using System.Collections.Specialized;
 using System.Globalization;
 using System.Web;
 using Microsoft.AspNetCore.Http;
-using Newtonsoft.Json;
 using RestSharp;
 using TwitchShoutout.Database;
 using TwitchShoutout.Database.Models;
 using TwitchShoutout.Server.Config;
 using TwitchShoutout.Server.Dtos;
+using TwitchShoutout.Server.Events;
 using TwitchShoutout.Server.Helpers;
-using File = System.IO.File;
 
 namespace TwitchShoutout.Server.Services;
 
 public class TwitchAuthService
 {
-    private static PeriodicTimer? _refreshTimer;
-    public static event EventHandler<string>? TokenRefreshed;
+    public static event EventHandler<TokenRefreshEventArgs>? TokenRefreshed;
     private static BotDbContext DbContext { get; set; } = null!;
-    private static bool IsAutoRefreshEnabled { get; set; }
     private readonly RestClient _authClient;
-    private readonly RestClient _apiClient;
 
     public TwitchAuthService(BotDbContext dbContext)
     {
         DbContext = dbContext;
         _authClient = new(Globals.TwitchAuthUrl);
-        _apiClient = new(Globals.TwitchApiUrl);
     }
 
     private RestRequest CreateAuthRequest(string endpoint, Method method = Method.Post)
@@ -156,72 +151,32 @@ public class TwitchAuthService
     public static bool IsTokenExpired() =>
         DateTime.UtcNow >= DateTime.Parse(Globals.ExpiresAt, CultureInfo.InvariantCulture);
 
-    public static void StartAutoRefresh(CancellationToken cancellationToken)
+    public async Task StartTokenRefreshForChannel(TwitchUser user, CancellationToken cancellationToken)
     {
-        if (IsAutoRefreshEnabled) return;
-
-        IsAutoRefreshEnabled = true;
-        _ = AutoRefreshTask(cancellationToken);
-    }
-
-    private static async Task AutoRefreshTask(CancellationToken cancellationToken)
-    {
-        try
+        if (string.IsNullOrEmpty(user.RefreshToken)) return;
+    
+        while (!cancellationToken.IsCancellationRequested)
         {
-            while (IsAutoRefreshEnabled && !cancellationToken.IsCancellationRequested)
+            try
             {
-                await HandleTokenRefresh(cancellationToken);
+                if (user.TokenExpiry <= DateTime.UtcNow.AddMinutes(5))
+                {
+                    TokenResponse response = await RefreshToken(user.RefreshToken);
+                    user.AccessToken = response.AccessToken;
+                    user.RefreshToken = response.RefreshToken;
+                    user.TokenExpiry = DateTime.UtcNow.AddSeconds(response.ExpiresIn);
+                    
+                    await DbContext.SaveChangesAsync(cancellationToken);
+                    TokenRefreshed?.Invoke(this, new(user.Id, response.AccessToken));
+                }
+    
+                await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Normal shutdown, ignore
-        }
-        finally
-        {
-            IsAutoRefreshEnabled = false;
-        }
-    }
-
-    private static async Task HandleTokenRefresh(CancellationToken cancellationToken)
-    {
-        DateTime expiresAt = DateTime.Parse(Globals.ExpiresAt, CultureInfo.InvariantCulture);
-        TimeSpan timeUntilExpiry = expiresAt - DateTime.UtcNow;
-        TimeSpan waitTime = timeUntilExpiry.Subtract(TimeSpan.FromMinutes(5));
-
-        if (waitTime > TimeSpan.Zero)
-        {
-            await Task.Delay(waitTime, cancellationToken);
-        }
-
-        TwitchAuthResponse authResponse = await RefreshAccessTokenAsync();
-        await UpdateTokens(authResponse, cancellationToken);
-    }
-
-    private static async Task UpdateTokens(TwitchAuthResponse authResponse, CancellationToken cancellationToken)
-    {
-        await File.WriteAllTextAsync(Globals.TokenFilePath, authResponse.ToJson(), cancellationToken);
-
-        Globals.AccessToken = authResponse.AccessToken ?? throw new("Failed to deserialize the response from Twitch.");
-        Globals.RefreshToken = authResponse.RefreshToken ?? throw new("Refresh token is missing in the response.");
-        Globals.ExpiresIn = authResponse.ExpiresIn.ToString();
-        Globals.ExpiresAt = DateTime.UtcNow.AddSeconds(authResponse.ExpiresIn).ToString("o", CultureInfo.InvariantCulture);
-
-        TokenRefreshed?.Invoke(null, authResponse.AccessToken);
-    }
-
-    public static void StopAutoRefresh()
-    {
-        _refreshTimer?.Dispose();
-        _refreshTimer = null;
-        IsAutoRefreshEnabled = false;
-    }
-
-    public TwitchUser? GetRestoredById(string authModelId)
-    {
-        lock (DbContext)
-        {
-            return DbContext.TwitchUsers.FirstOrDefault(u => u.Id == authModelId);
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error refreshing token for {user.Username}: {ex.Message}");
+                await Task.Delay(TimeSpan.FromMinutes(5), cancellationToken);
+            }
         }
     }
 }

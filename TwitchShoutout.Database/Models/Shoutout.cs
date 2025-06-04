@@ -13,7 +13,7 @@ public class Shoutout
     [MaxLength(50)]
     [JsonProperty("id")] public string Id { get; set; } = null!;
     [JsonProperty("enabled")] public bool Enabled { get; set; }
-    [JsonProperty("message")] public string Message { get; set; } = string.Empty;
+    [JsonProperty("message")] public string MessageTemplate { get; set; } = string.Empty;
     
     [JsonProperty("channel_id")] public string ChannelId { get; set; } = null!;
     [JsonProperty("channel")]  public Channel Channel { get; set; } = null!;
@@ -48,7 +48,7 @@ public class SimpleShoutout
         ChannelId = shoutout.ChannelId;
         ShoutedUserId = shoutout.ShoutedUserId;
         Enabled = shoutout.Enabled;
-        Message = shoutout.Message;
+        Message = shoutout.MessageTemplate;
         
         Username = shoutout.ShoutedUser.Username;
         DisplayName = shoutout.ShoutedUser.DisplayName;

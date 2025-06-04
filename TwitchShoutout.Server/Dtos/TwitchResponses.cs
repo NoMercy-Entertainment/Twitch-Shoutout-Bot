@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json;
+using TwitchShoutout.Database.Models;
 
 namespace TwitchShoutout.Server.Dtos;
 
@@ -71,4 +72,23 @@ public class UserInfo
     [JsonProperty("offline_image_url")] public string OfflineImageUrl { get; set; } = string.Empty;
     [JsonProperty("view_count")] public int ViewCount { get; set; }
     [JsonProperty("created_at")] public DateTime CreatedAt { get; set; }
+}
+
+public class ChannelInfoResponse
+{
+    [JsonProperty("data")] public List<ChannelInfoDto> Data { get; set; } = [];
+}
+public class ChannelInfoDto
+{
+    [JsonProperty("broadcaster_id")] public string BroadcasterId { get; set; } = string.Empty;
+    [JsonProperty("broadcaster_login")] public string BroadcasterLogin { get; set; } = string.Empty;
+    [JsonProperty("broadcaster_name")] public string BroadcasterName { get; set; } = string.Empty;
+    [JsonProperty("broadcaster_language")] public string Language { get; set; } = string.Empty;
+    [JsonProperty("game_id")] public string GameId { get; set; } = string.Empty;
+    [JsonProperty("game_name")] public string GameName { get; set; } = string.Empty;
+    [JsonProperty("title")] public string Title { get; set; } = string.Empty;
+    [JsonProperty("delay")] public int Delay { get; set; }
+    [JsonProperty("tags")] public List<string> Tags { get; set; } = [];
+    [JsonProperty("content_classification_labels")] public List<string> ContentLabels { get; set; } = [];
+    [JsonProperty("is_branded_content")] public bool IsBrandedContent { get; set; }
 }

@@ -35,7 +35,17 @@ public class AuthenticationController(BotDbContext dbContext, TwitchAuthService 
 
             TwitchUser userInfo = await twitchApiService.FetchUser(tokenResponse, countryCode, validateResponse.UserId, enabled: true);
             
-            await twitchApiService.FetchModeration(userInfo.Id, tokenResponse);
+            await twitchApiService.FetchModeration(userInfo.Id, tokenResponse);;
+
+            // Get Worker from singleton registration
+            Worker worker = HttpContext.RequestServices.GetRequiredService<Worker>();
+        
+            // Connect to the user's channel
+            Channel channel = userInfo.Channel;
+            if (channel.Enabled)
+            {
+                await worker.ConnectToChannel(channel, CancellationToken.None);
+            }
 
             return Ok(new
             {
@@ -45,7 +55,8 @@ public class AuthenticationController(BotDbContext dbContext, TwitchAuthService 
         }
         catch (Exception e)
         {
-            return UnauthorizedResponse(e.Message);
+            Console.WriteLine(e);
+            return UnprocessableEntityResponse(e.Message);
         }
     }
 

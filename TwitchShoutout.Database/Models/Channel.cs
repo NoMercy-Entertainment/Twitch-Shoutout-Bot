@@ -15,13 +15,18 @@ public class Channel
     [MaxLength(25)]
     [JsonProperty("name")] public string Name { get; set; } = null!;
     [JsonProperty("enabled")] public bool Enabled { get; set; } = true;
+    
+    [MaxLength(450)]
+    [JsonProperty("shoutout_template")] public string? ShoutoutTemplate { get; set; }
 
     [ForeignKey(nameof(Id))]
     [JsonProperty("broadcaster")] public virtual TwitchUser User { get; set; } = null!;
     
+    [JsonProperty("info")] public virtual ChannelInfo Info { get; set; } = null!;
+    
     [JsonProperty("shoutouts")] public ICollection<Shoutout> Shoutouts { get; set; } = [];
     
-    [JsonProperty("moderated_for")] public ICollection<ChannelModerators> ChannelModerators { get; set; } = new List<ChannelModerators>();
+    [JsonProperty("moderated_for")] public ICollection<ChannelModerator> ChannelModerators { get; set; } = new List<ChannelModerator>();
 
 }
 
@@ -39,7 +44,7 @@ public sealed class SimpleChannel
         Id = channel.Id;
         Name = channel.Name;
         Enabled = channel.Enabled;
-        User = new(channel.User);
+        User = channel.User is not null ? new(channel.User) : null;
         Shoutouts = channel.Shoutouts.Select(s => new SimpleShoutout(s));
         ChannelModerators = channel.ChannelModerators.Select(m => new SimpleChannelModerator(m.User, m.Channel));
     }

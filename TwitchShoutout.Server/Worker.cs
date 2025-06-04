@@ -1,7 +1,8 @@
-using System.Configuration;
+using Microsoft.EntityFrameworkCore;
 using TwitchLib.Client;
-using TwitchLib.Client.Events;
 using TwitchLib.Client.Models;
+using TwitchShoutout.Database;
+using TwitchShoutout.Database.Models;
 using TwitchShoutout.Server.Config;
 using TwitchShoutout.Server.Helpers;
 using TwitchShoutout.Server.Services;
@@ -10,117 +11,202 @@ namespace TwitchShoutout.Server;
 
 public class Worker : BackgroundService
 {
-    private readonly TwitchClient _client = new();
-    private static readonly Dictionary<string, DateTime> ShoutoutCooldowns = new();
-    private static TwitchApiService ApiService { get; set; } = null!;
-    private static TwitchAuthService AuthService { get; set; } = null!;   
-    private readonly TwitchMessageProcessingService _messageProcessingService;
-    
-    public Worker(TwitchApiService twitchApiService, TwitchAuthService twitchAuthService)
+    private readonly Dictionary<string, TwitchClient> _clients = [];
+    private readonly TwitchApiService _apiService;
+    private readonly TwitchAuthService _authService;
+    private TwitchMessageProcessingService _messageProcessingService = null!;
+    private readonly BotDbContext _dbContext;
+    private TwitchClient? _botClient;
+
+    public Worker(TwitchApiService apiService, TwitchAuthService authService, BotDbContext dbContext)
     {
-        ApiService = twitchApiService;
-        AuthService = twitchAuthService;
-        
-        _messageProcessingService = new(_client, ApiService);
-        
-        if (TwitchAuthService.IsTokenExpired())
-        {
-            TwitchAuthService.RefreshAccessTokenAsync().Wait();
-        }
+        _apiService = apiService;
+        _authService = authService;
+        _dbContext = dbContext;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
         {
-            if (string.IsNullOrEmpty(Globals.BotUsername) || string.IsNullOrEmpty(Globals.BotUsername))
-                throw new ConfigurationErrorsException("Missing environment variables for Twitch bot.");
-            
-            TwitchAuthService.TokenRefreshed += OnTokenRefreshed;
-            
-            ConnectionCredentials credentials = new(Globals.BotUsername, Globals.AccessToken);
-            _client.Initialize(credentials, Globals.ChannelName);
+            // Initialize bot client first
+            await InitializeBotClient(stoppingToken);
 
-            _client.OnMessageReceived += Client_OnMessageReceived;
+            // Initialize message processing service with bot client
+            _messageProcessingService = new(_clients, _apiService);
+            // Load and initialize all enabled channels
+            await InitializeChannelClients(stoppingToken);
 
-            _client.OnConnected += (_, _) =>
+            // Start token refresh for all channels
+            await StartTokenRefreshForChannels(stoppingToken);
+            
+            stoppingToken.Register(async void () =>
             {
-                Console.WriteLine(
-                    $"Connected to Twitch as {Globals.BotUsername} and joined channel {Globals.ChannelName}.");
-                _client.SendMessage(Globals.BotUsername,
-                    "Hello everyone! I'm here to give shoutouts! Type !shoutout to get one! 🎉");
-            };
-            _client.OnError += (_, e) =>
-            {
-                Console.WriteLine($"Error: {e.Exception.Message}");
-            };
-            
-            TwitchAuthService.StartAutoRefresh(stoppingToken);
+                try
+                {
+                    await HandleShutdown();
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"Error during shutdown: {e.Message}");
+                }
+            });
 
-            await Task.Run(() => _client.Connect(), stoppingToken);
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
         catch (OperationCanceledException)
         {
-            // Normal shutdown, ignore
+            // Normal shutdown
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error in ExecuteAsync: {ex.Message}");
             throw;
         }
-        finally
-        {
-            // Cleanup
-            TwitchAuthService.TokenRefreshed -= OnTokenRefreshed;
-            TwitchAuthService.StopAutoRefresh();
-            
-            if (_client.IsConnected)
-            {
-                try
-                {
-                    await Task.Run(() => _client.Disconnect(), stoppingToken);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error disconnecting client: {ex.Message}");
-                }
-            }
-        }
     }
     
-    private async void OnTokenRefreshed(object? sender, string newToken)
+    private async Task HandleShutdown()
     {
         try
         {
-            ConnectionCredentials newCredentials = new(Globals.BotId, newToken);
-            await Task.Run(() => _client.Disconnect());
-            _client.Initialize(newCredentials, Globals.BotUsername);
-            await Task.Run(() => _client.Connect());
+            // Get all enabled channels
+            List<Channel> enabledChannels = await _dbContext.Channels
+                .Include(c => c.User)
+                .Where(c => c.Enabled)
+                .ToListAsync();
+
+            foreach (Channel channel in enabledChannels)
+            {
+                if (_clients.TryGetValue(channel.Name, out TwitchClient? client))
+                {
+                    // Send shutdown message
+                    client.SendMessage(channel.Name, "Bot is shutting down for maintenance. We'll be back soon! 🔧");
+                    
+                    // Disconnect client
+                    client.Disconnect();
+                }
+            }
+
+            // Wait for messages to be sent
+            await Task.Delay(1000);
+
+            // Dispose clients
+            foreach (TwitchClient client in _clients.Values)
+            {
+                client.Disconnect();
+            }
+            
+            _clients.Clear();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error handling token refresh: {ex.Message}");
+            Console.WriteLine($"Error during shutdown: {ex.Message}");
         }
     }
 
-    private void Client_OnMessageReceived(object? sender, OnMessageReceivedArgs e)
+    private async Task InitializeBotClient(CancellationToken stoppingToken)
     {
-        ParsedCommand? parsedCommand = ParsedCommand.TryParse(e);
+        if (TwitchAuthService.IsTokenExpired())
+        {
+            await TwitchAuthService.RefreshAccessTokenAsync();
+        }
+
+        _botClient = new();
+        ConnectionCredentials credentials = new(Globals.BotUsername, Globals.AccessToken);
+        _botClient.Initialize(credentials, Globals.ChannelName);
+        _clients[Globals.BotUsername] = _botClient;
+        await ConnectClient(_botClient, Globals.BotUsername, stoppingToken);
+    }
+
+    private async Task InitializeChannelClients(CancellationToken stoppingToken)
+    {
+        List<Channel> enabledChannels = await _dbContext.Channels
+            .Include(c => c.User)
+            .Where(c => c.Enabled)
+            .ToListAsync(stoppingToken);
+
+        foreach (Channel channel in enabledChannels)
+        {
+            ConnectToChannel(channel, stoppingToken);
+        }
+    }
+
+    internal async Task ConnectToChannel(Channel channel, CancellationToken stoppingToken)
+    {
         try
         {
-            if (parsedCommand is not null && parsedCommand.IsCommand)
+            TwitchClient client = new();
+            ConnectionCredentials credentials = new(Globals.BotUsername, Globals.AccessToken);
+            client.Initialize(credentials, channel.Name);
+            
+            stoppingToken.Register(() =>
             {
-                // Use the service here
-                _messageProcessingService.HandleCommand(parsedCommand).Wait();
-                return;
-            }
-            // Use the service here
-            _messageProcessingService.HandleMessage(parsedCommand).Wait();
+                Console.WriteLine("Stopping connection to channel: " + channel.Name);
+                if (_clients.TryGetValue(channel.Name, out TwitchClient? existingClient))
+                {
+                    existingClient.Disconnect();
+                    _clients.Remove(channel.Name);
+                }
+            });
+
+            SetupClientEventHandlers(client, channel);
+            
+            _clients[channel.Name] = client;
+            await ConnectClient(client, channel.Name, stoppingToken);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            //
+            Console.WriteLine($"Error connecting to channel {channel.Name}: {ex.Message}");
+        }
+    }
+
+    private void SetupClientEventHandlers(TwitchClient client, Channel channel)
+    {
+        client.OnMessageReceived += (_, e) => 
+        { 
+            // if (e.ChatMessage.Username.Equals(Globals.BotUsername, StringComparison.OrdinalIgnoreCase))
+            //     return;
+
+            ParsedMessage parsedMessage = ParsedMessage.Parse(e);
+            if (parsedMessage.IsCommand)
+            {
+                _messageProcessingService.HandleCommand(parsedMessage, channel).Wait();
+            }
+            else
+            {
+                _messageProcessingService.HandleMessage(parsedMessage, channel).Wait();
+            }
+        };
+
+        client.OnConnected += (_, _) =>
+        {
+            Console.WriteLine($"Connected to channel: {channel.Name}");
+            // client.SendMessage(channel.Name, "Bot connected and ready for shoutouts! 🎉");
+        };
+    }
+
+    private static async Task ConnectClient(TwitchClient client, string channelName, CancellationToken stoppingToken)
+    {
+        try
+        {
+            await Task.Run(client.Connect, stoppingToken);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error connecting to {channelName}: {ex.Message}");
+        }
+    }
+
+    private async Task StartTokenRefreshForChannels(CancellationToken stoppingToken)
+    {
+        List<Channel> channels = await _dbContext.Channels
+            .Include(c => c.User)
+            .Where(c => c.Enabled)
+            .ToListAsync(stoppingToken);
+
+        foreach (Channel channel in channels)
+        {
+            await _authService.StartTokenRefreshForChannel(channel.User, stoppingToken);
         }
     }
 }

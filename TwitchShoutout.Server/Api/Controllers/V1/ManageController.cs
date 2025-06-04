@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
 using TwitchShoutout.Database;
 using TwitchShoutout.Database.Models;
 using TwitchShoutout.Server.Helpers;
@@ -54,10 +55,10 @@ public class ManageController : BaseController
         return Ok($"Bot added to {channelName}!");
     }
 
-    [HttpDelete("{id}")]
-    public IActionResult RemoveChannel(int id)
+    [HttpDelete("{channelId}")]
+    public IActionResult RemoveChannel(int channelId)
     {
-        Channel? channel = _db.Channels.Find(id);
+        Channel? channel = _db.Channels.Find(channelId);
         if (channel == null)
             return NotFound("SimpleChannel not found.");
 
@@ -67,10 +68,10 @@ public class ManageController : BaseController
         return Ok($"SimpleChannel {channel.Name} removed.");
     }
     
-    [HttpPatch("{id}")]
-    public IActionResult UpdateChannel(int id, [FromBody] Channel updatedChannel)
+    [HttpPatch("{channelId}")]
+    public IActionResult UpdateChannel(int channelId, [FromBody] Channel updatedChannel)
     {
-        Channel? channel = _db.Channels.Find(id);
+        Channel? channel = _db.Channels.Find(channelId);
         if (channel == null)
             return NotFound("SimpleChannel not found.");
 
@@ -81,10 +82,10 @@ public class ManageController : BaseController
         return Ok($"SimpleChannel {channel.Name} updated.");
     }
     
-    [HttpPatch("{id}/able")]
-    public IActionResult Able(int id, [FromBody] Channel updatedChannel)
+    [HttpPatch("{channelId}/able")]
+    public IActionResult Able(int channelId, [FromBody] Channel updatedChannel)
     {
-        Channel? channel = _db.Channels.Find(id);
+        Channel? channel = _db.Channels.Find(channelId);
         if (channel == null)
             return NotFound("SimpleChannel not found.");
 
@@ -94,4 +95,84 @@ public class ManageController : BaseController
         return Ok($"Changed bot status for channel {channel.Name} to {(channel.Enabled ? "enabled" : "disabled")}.");
     }
     
+    [HttpGet("{channelId}/shoutouts")]
+    public IActionResult GetShoutouts(string channelId)
+    {
+        List<Shoutout> shoutouts = _db.Shoutouts
+            .Where(s => s.ChannelId == channelId)
+            .Include(s => s.ShoutedUser)
+            .ToList();
+
+        return Ok(shoutouts);
+    }
+
+    [HttpPost("{channelId}/shoutouts")]
+    public IActionResult AddShoutout(string channelId, [FromBody] ShoutoutRequest request)
+    {
+        TwitchUser? user = _db.TwitchUsers.FirstOrDefault(u => u.Username == request.Username);
+        if (user == null)
+        {
+            return BadRequest($"User {request.Username} not found.");
+        }
+
+        Shoutout newShoutout = new()
+        {
+            ChannelId = channelId,
+            ShoutedUserId = user.Id,
+            MessageTemplate = request.MessageTemplate,
+            Enabled = request.Enabled
+        };
+
+        _db.Shoutouts.Add(newShoutout);
+        _db.SaveChanges();
+
+        return CreatedAtAction(nameof(GetShoutouts), new { channelId = channelId }, newShoutout);
+    }
+
+    [HttpPut("{channelId}/shoutouts/{shoutoutId}")]
+    public IActionResult UpdateShoutout(string channelId, int shoutoutId, [FromBody] ShoutoutRequest request)
+    {
+        Shoutout? shoutout = _db.Shoutouts.Find(shoutoutId);
+        if (shoutout == null)
+        {
+            return NotFound($"Shoutout with id {shoutoutId} not found.");
+        }
+
+        TwitchUser? user = _db.TwitchUsers.FirstOrDefault(u => u.Username == request.Username);
+        if (user == null)
+        {
+            return BadRequest($"User {request.Username} not found.");
+        }
+
+        shoutout.ShoutedUserId = user.Id;
+        shoutout.MessageTemplate = request.MessageTemplate;
+        shoutout.Enabled = request.Enabled;
+
+        _db.Shoutouts.Update(shoutout);
+        _db.SaveChanges();
+
+        return Ok(shoutout);
+    }
+
+    [HttpDelete("{channelId}/shoutouts/{shoutoutId}")]
+    public IActionResult DeleteShoutout(string channelId, int shoutoutId)
+    {
+        Shoutout? shoutout = _db.Shoutouts.Find(shoutoutId);
+        if (shoutout == null)
+        {
+            return NotFound($"Shoutout with id {shoutoutId} not found.");
+        }
+
+        _db.Shoutouts.Remove(shoutout);
+        _db.SaveChanges();
+
+        return NoContent();
+    }
+}
+
+public class ShoutoutRequest
+{
+    [JsonProperty("username")] public string Username { get; set; } = string.Empty;
+    [JsonProperty("messageTemplate")] public string MessageTemplate { get; set; } = string.Empty;
+    [JsonProperty("enabled")] public bool Enabled { get; set; }
 }
