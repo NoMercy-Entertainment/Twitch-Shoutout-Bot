@@ -85,14 +85,9 @@ public class TwitchMessageProcessingService
             ? parsedCommand.ArgumentList[0].Replace("@","")
             : parsedCommand.ChatMessage.Username;
         
-        TwitchUser? newUser = db.TwitchUsers
-            .FirstOrDefault(u => u.Username == shoutedUser);
-        
-        if (newUser == null)
-        {
-            newUser = await _apiService.FetchUser(id: shoutedUser);
-        }
-        
+        TwitchUser newUser = db.TwitchUsers
+            .FirstOrDefault(u => u.Username == shoutedUser) ?? await _apiService.FetchUser(id: shoutedUser);
+
         Shoutout? existingShoutout = await db.Shoutouts
             .FirstOrDefaultAsync(s => s.ShoutedUserId == newUser.Id);
         

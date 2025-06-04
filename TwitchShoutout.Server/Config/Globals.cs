@@ -1,5 +1,6 @@
 using System.Configuration;
 using System.Globalization;
+using TwitchShoutout.Server.Dtos;
 using TwitchShoutout.Server.Helpers;
 using TwitchShoutout.Server.Services;
 

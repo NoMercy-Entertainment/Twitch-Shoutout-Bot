@@ -80,7 +80,7 @@ public class ConfigureSwaggerOptions : IConfigureOptions<SwaggerGenOptions>
             },
             TermsOfService = new("https://nomercy.tv/terms-of-service"),
         };
-
+        
         if (description.IsDeprecated) info.Description += " This API version has been deprecated.";
 
         return info;

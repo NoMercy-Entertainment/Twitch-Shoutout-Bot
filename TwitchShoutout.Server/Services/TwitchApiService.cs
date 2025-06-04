@@ -16,170 +16,123 @@ namespace TwitchShoutout.Server.Services;
 public class TwitchApiService
 {
     private static BotDbContext DbContext { get; set; } = null!;
-    
+    private readonly RestClient _client;
+
     public TwitchApiService(BotDbContext dbContext)
     {
         DbContext = dbContext;
+        _client = new(Globals.TwitchApiUrl);
         
         string botId = GetUser(Globals.BotUsername).Result?.Id ?? throw new("Failed to fetch bot user id.");
         Globals.BotId = botId;
     }
-    
+
+    private RestRequest CreateTwitchRequest(string endpoint, Method method = Method.Get, TokenResponse? tokenResponse = null)
+    {
+        if (string.IsNullOrEmpty(Globals.AccessToken)) throw new("No access token provided.");
+
+        RestRequest request = new(endpoint, method);
+        request.AddHeader("Authorization", $"Bearer {tokenResponse?.AccessToken ?? Globals.AccessToken}");
+        request.AddHeader("Client-Id", Globals.ClientId);
+        return request;
+    }
+
+    private async Task<T> ExecuteTwitchRequest<T>(RestRequest request) where T : class
+    {
+        RestResponse response = await _client.ExecuteAsync(request);
+        
+        if (response is { IsSuccessful: false, Content: not null })
+        {
+            TwitchErrorResponse? errorResponse = response.Content.FromJson<TwitchErrorResponse>();
+            throw new(errorResponse?.Message ?? "Failed to execute Twitch API request.");
+        }
+
+        T? result = response.Content?.FromJson<T>();
+        if (result == null) throw new("Failed to parse API response.");
+        
+        return result;
+    }
+
     public async Task<UserInfo?> GetUser(string? userId = null)
     {
-        if (string.IsNullOrEmpty(Globals.AccessToken)) throw new("No access token provided.");
+        RestRequest request = CreateTwitchRequest("users");
         
-        RestClient client = new(Globals.TwitchApiUrl);
-        RestRequest request = new("users");
-        request.AddHeader("Authorization", $"Bearer {Globals.AccessToken}");
-        request.AddHeader("Client-Id", Globals.ClientId);
-        
-        // if user is a number string, it is a user id
-        if (!string.IsNullOrEmpty(userId) && userId.All(char.IsDigit))
+        if (!string.IsNullOrEmpty(userId))
         {
-            request.AddQueryParameter("id", userId);
-        }
-        // if user is not a number string, it is a username
-        else if (!string.IsNullOrEmpty(userId))
-        {
-            request.AddQueryParameter("login", userId);
+            request.AddQueryParameter(userId.All(char.IsDigit) ? "id" : "login", userId);
         }
 
-        RestResponse response = await client.ExecuteAsync(request);
-
-        if (response is { IsSuccessful: false, Content: not null })
-        {
-            TwitchErrorResponse? errorResponse = response.Content.FromJson<TwitchErrorResponse>();
-            throw new(errorResponse?.Message ?? "Failed to fetch user information.");
-        }
-
-        UserInfoResponse? userInfoResponse = response.Content?.FromJson<UserInfoResponse>();
-        if (userInfoResponse is null) throw new("Failed to parse user information.");
-        
-        return userInfoResponse.Data.FirstOrDefault();
+        UserInfoResponse response = await ExecuteTwitchRequest<UserInfoResponse>(request);
+        return response.Data.FirstOrDefault();
     }
-    
+
     public async Task<List<UserInfo>?> GetUsers(string[] userIds)
-    {        
-        if (string.IsNullOrEmpty(Globals.AccessToken)) throw new("No access token provided.");
-        if (userIds.Any(string.IsNullOrEmpty)) throw new("Invalid user id provided.");
-        if (userIds.Length == 0) throw new("userIds must contain at least 1 userId");
-        if (userIds.Length > 100) throw new("Too many user ids provided.");
-        
-        RestClient client = new(Globals.TwitchApiUrl);
-        RestRequest request = new("users");
-        request.AddHeader("Authorization", $"Bearer {Globals.AccessToken}");
-        request.AddHeader("Client-Id", Globals.ClientId);
-        
-        foreach (string id in userIds)
-        {
-            request.AddQueryParameter("user_id", id);
-        }
-        
-        RestResponse response = await client.ExecuteAsync(request);
-        if (response is { IsSuccessful: false, Content: not null })
-        {
-            TwitchErrorResponse? errorResponse = response.Content.FromJson<TwitchErrorResponse>();
-            throw new(errorResponse?.Message ?? "Failed to fetch user information.");
-        }
+    {
+        if (!ValidateUserIds(userIds)) throw new("Invalid user ids provided.");
 
-        UserInfoResponse? userInfoResponse = response.Content?.FromJson<UserInfoResponse>();
-        if (userInfoResponse is null) throw new("Failed to parse user information.");
-        
-        return userInfoResponse.Data;
+        RestRequest request = CreateTwitchRequest("users");
+        userIds.ToList().ForEach(id => request.AddQueryParameter("user_id", id));
+
+        UserInfoResponse response = await ExecuteTwitchRequest<UserInfoResponse>(request);
+        return response.Data;
     }
-    
+
     public async Task<GetUserChatColorResponse?> BotGetUserChatColors(string[] userIds)
     {
-        if (userIds.Any(string.IsNullOrEmpty)) throw new("Invalid user id provided.");
-        if (userIds.Length == 0) throw new($"userIds must contain at least 1 userId");
-        if (userIds.Length > 100) throw new("Too many user ids provided.");
-        
-        RestClient client = new(Globals.TwitchApiUrl);
-        RestRequest request = new($"chat/color");
-        request.AddHeader("Authorization", $"Bearer {Globals.AccessToken}");
-        request.AddHeader("Client-Id", Globals.ClientId);
+        if (!ValidateUserIds(userIds)) throw new("Invalid user ids provided.");
 
-        foreach (string id in userIds)
-        {
-            request.AddQueryParameter("user_id", id);
-        }
+        RestRequest request = CreateTwitchRequest("chat/color");
+        userIds.ToList().ForEach(id => request.AddQueryParameter("user_id", id));
 
-        RestResponse response = await client.ExecuteAsync(request);
-        if (response is { IsSuccessful: false, Content: not null })
-        {
-            TwitchErrorResponse? errorResponse = response.Content.FromJson<TwitchErrorResponse>();
-            throw new(errorResponse?.Message ?? "Failed to fetch user color.");
-        }
-        
-        GetUserChatColorResponse? colors = response.Content?.FromJson<GetUserChatColorResponse>();
-        if (colors is null) throw new("Failed to parse user chat color.");
-        
-        return colors;
-    }
-    
-    public async Task<ChannelResponse> GetUserModerators(string userId, TokenResponse? tokenResponse = null)
-    {
-        if (string.IsNullOrEmpty(Globals.AccessToken)) throw new("No access token provided.");
-        if (string.IsNullOrEmpty(userId)) throw new("No user id provided.");
-        
-        RestClient client = new(Globals.TwitchApiUrl);
-        
-        RestRequest request = new("moderation/channels");
-                    request.AddHeader("Authorization", $"Bearer {tokenResponse?.AccessToken ?? Globals.AccessToken}");
-                    request.AddHeader("client-id", Globals.ClientId);
-                    request.AddParameter("user_id", userId);
-
-        RestResponse response = await client.ExecuteAsync(request);
-        if (response is { IsSuccessful: false, Content: not null })
-        {
-            TwitchErrorResponse? errorResponse = response.Content.FromJson<TwitchErrorResponse>();
-            throw new(errorResponse?.Message ?? "Failed to fetch user information.");
-        }
-        
-        ChannelResponse? channelResponse = response.Content?.FromJson<ChannelResponse>();
-        if (channelResponse == null) throw new("Invalid response from Twitch.");
-        
-        return channelResponse;
+        return await ExecuteTwitchRequest<GetUserChatColorResponse>(request);
     }
 
     public async Task Shoutout(string chatMessageChannel, string chatMessageUserName)
     {
-        if (string.IsNullOrEmpty(chatMessageChannel)) throw new("No channel provided.");
-        if (string.IsNullOrEmpty(chatMessageUserName)) throw new("No user provided.");
-        
-        RestClient client = new(Globals.TwitchApiUrl);
+        if (string.IsNullOrEmpty(chatMessageChannel) || string.IsNullOrEmpty(chatMessageUserName))
+            throw new("Channel and user must be provided.");
 
-        UserInfo? user = await GetUser(chatMessageUserName);
-        if (user is null) throw new($"User {chatMessageUserName} not found.");
-        
-        RestRequest request = new("chat/shoutouts", Method.Post);
-        request.AddHeader("Authorization", $"Bearer {Globals.AccessToken}");
-        request.AddHeader("client-id", Globals.ClientId);
-        
+        UserInfo user = await GetUser(chatMessageUserName) ?? throw new($"User {chatMessageUserName} not found.");
+
+        RestRequest request = CreateTwitchRequest("chat/shoutouts", Method.Post);
         request.AddParameter("from_broadcaster_id", chatMessageChannel);
         request.AddParameter("to_broadcaster_id", user.Id);
         request.AddParameter("moderator_id", Globals.BotId);
-        
-        RestResponse response = await client.ExecuteAsync(request);
-        if (response is { IsSuccessful: false, Content: not null })
-        {
-            TwitchErrorResponse? errorResponse = response.Content.FromJson<TwitchErrorResponse>();
-            throw new(errorResponse?.Message ?? "Failed to shoutout user.");
-        }
+
+        await ExecuteTwitchRequest<object>(request);
     }
 
-    public async Task<TwitchUser> FetchUser(TokenResponse? tokenResponse = null, string? countryCode = null, string? id = null)
+    public async Task<TwitchUser> FetchUser(TokenResponse? tokenResponse = null, string? countryCode = null, string? id = null, bool? enabled = false)
     {
-        UserInfo? userInfo = await GetUser(id);
-        if (userInfo is null) throw new("Failed to fetch user information.");
-        
-        IEnumerable<string>? zoneIds = TzdbDateTimeZoneSource.Default.ZoneLocations?
+        UserInfo userInfo = await GetUser(id) ?? throw new("Failed to fetch user information.");
+        TwitchUser user = await CreateTwitchUser(userInfo, tokenResponse, countryCode, enabled ?? false);
+        await UpsertUserData(user);
+        return user;
+    }
+
+    public async Task FetchModeration(string userInfoId, TokenResponse tokenResponse)
+    {
+        RestRequest request = CreateTwitchRequest("moderation/channels", Method.Get, tokenResponse);
+        request.AddParameter("user_id", userInfoId);
+
+        ChannelResponse moderators = await ExecuteTwitchRequest<ChannelResponse>(request);
+        await UpsertModerators(userInfoId, moderators);
+    }
+
+    private bool ValidateUserIds(string[] userIds) =>
+        userIds.Length is > 0 and <= 100 && userIds.All(id => !string.IsNullOrEmpty(id));
+
+    private async Task<TwitchUser> CreateTwitchUser(UserInfo userInfo, TokenResponse? tokenResponse, string? countryCode, bool enabled = false)
+    {
+        List<string>? zoneIds = TzdbDateTimeZoneSource.Default.ZoneLocations?
             .Where(x => x.CountryCode == countryCode)
             .Select(x => x.ZoneId)
             .ToList();
-        
-        TwitchUser user = new()
+
+        GetUserChatColorResponse? colors = await BotGetUserChatColors([userInfo.Id]);
+        string color = colors?.Data.First().Color ?? "#9146FF";
+
+        return new()
         {
             Id = userInfo.Id,
             Username = userInfo.Login,
@@ -188,35 +141,25 @@ public class TwitchApiService
             ProfileImageUrl = userInfo.ProfileImageUrl,
             OfflineImageUrl = userInfo.OfflineImageUrl,
             BroadcasterType = userInfo.BroadcasterType,
-            Timezone = id == Globals.BotId ? "UTC" : zoneIds?.FirstOrDefault(),
+            Timezone = userInfo.Id == Globals.BotId ? "UTC" : zoneIds?.FirstOrDefault(),
             AccessToken = tokenResponse?.AccessToken,
             RefreshToken = tokenResponse?.RefreshToken,
-            TokenExpiry = tokenResponse?.ExpiresIn is not null 
-                ? DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn) 
-                : null,
+            TokenExpiry = tokenResponse?.ExpiresIn != null ? DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn) : null,
+            Color = color,
+            Channel = new()
+            {
+                Id = userInfo.Id,
+                Name = userInfo.Login,
+                Enabled = enabled
+            }
         };
+    }
 
-        Channel channel = new()
-        {
-            Id = userInfo.Id,
-            Name = userInfo.Login,
-            Enabled = true,
-            User = user
-        };
-
-        user.Channel = channel;
-        
-        GetUserChatColorResponse? colors = await BotGetUserChatColors([userInfo.Id]);
-        
-        string? color = colors?.Data.First().Color;
-        
-        user.Color = string.IsNullOrEmpty(color)
-            ? "#9146FF"
-            : color;
-        
+    private async Task UpsertUserData(TwitchUser user)
+    {
         await DbContext.TwitchUsers.Upsert(user)
             .On(u => u.Id)
-            .WhenMatched((oldUser, newUser) => new()
+            .WhenMatched((_, newUser) => new()
             {
                 Username = newUser.Username,
                 DisplayName = newUser.DisplayName,
@@ -227,34 +170,30 @@ public class TwitchApiService
             })
             .RunAsync();
 
-        await DbContext.Channels.Upsert(channel)
+        await DbContext.Channels.Upsert(user.Channel)
             .On(c => c.Id)
-            .WhenMatched((oldChannel, newChannel) => new()
+            .WhenMatched((_, newChannel) => new()
             {
                 Name = newChannel.Name,
                 Enabled = newChannel.Enabled,
             })
             .RunAsync();
-        
-        return user;
     }
-    public async Task FetchModeration(string userInfoId, TokenResponse tokenResponse)
+
+    private async Task UpsertModerators(string channelId, ChannelResponse moderators)
     {
-        
-        ChannelResponse moderators = await GetUserModerators(userInfoId, tokenResponse);
         foreach (ChannelData channelData in moderators.Data)
         {
             TwitchUser moderatorInfo = await FetchUser(id: channelData.Id);
-
             ChannelModerators channelModerators = new()
             {
-                ChannelId = userInfoId,
+                ChannelId = channelId,
                 UserId = moderatorInfo.Id,
             };
-                
+
             await DbContext.ChannelModerators.Upsert(channelModerators)
                 .On(m => new { m.ChannelId, m.UserId })
-                .WhenMatched((oldModerator, newModerator) => new()
+                .WhenMatched((_, newModerator) => new()
                 {
                     ChannelId = newModerator.ChannelId,
                     UserId = newModerator.UserId

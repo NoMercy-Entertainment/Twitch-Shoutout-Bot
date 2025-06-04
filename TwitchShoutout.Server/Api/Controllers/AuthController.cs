@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using TwitchLib.Api.Helix.Models.Chat.GetUserChatColor;
 using TwitchShoutout.Database;
 using TwitchShoutout.Database.Models;
 using TwitchShoutout.Server.Dtos;
@@ -34,7 +33,7 @@ public class AuthenticationController(BotDbContext dbContext, TwitchAuthService 
             
             ValidatedTokenResponse validateResponse = await twitchAuthService.ValidateToken(tokenResponse.AccessToken);
 
-            TwitchUser userInfo = await twitchApiService.FetchUser(tokenResponse, countryCode, validateResponse.UserId);
+            TwitchUser userInfo = await twitchApiService.FetchUser(tokenResponse, countryCode, validateResponse.UserId, enabled: true);
             
             await twitchApiService.FetchModeration(userInfo.Id, tokenResponse);
 
@@ -184,32 +183,8 @@ public class AuthenticationController(BotDbContext dbContext, TwitchAuthService 
 
             string? userId = validateResponse.UserId;
 
-            TwitchUser userInfo = await twitchApiService.FetchUser(tokenResponse, countryCode, userId);
-
-            GetUserChatColorResponse? colors = await twitchApiService.BotGetUserChatColors([userInfo.Id]);
-
-            string? color = colors?.Data.First().Color;
-
-            userInfo.Color = string.IsNullOrEmpty(color)
-                ? "#9146FF"
-                : color;
-
-            await dbContext.TwitchUsers.Upsert(userInfo)
-                .On(u => u.Id)
-                .WhenMatched((oldUser, newUser) => new()
-                {
-                    Username = newUser.Username,
-                    DisplayName = newUser.DisplayName,
-                    ProfileImageUrl = newUser.ProfileImageUrl,
-                    OfflineImageUrl = newUser.OfflineImageUrl,
-                    Color = newUser.Color,
-                    BroadcasterType = newUser.BroadcasterType,
-                    AccessToken = newUser.AccessToken,
-                    RefreshToken = newUser.RefreshToken,
-                    TokenExpiry = newUser.TokenExpiry
-                })
-                .RunAsync();
-
+            TwitchUser userInfo = await twitchApiService.FetchUser(tokenResponse, countryCode, userId, enabled: true);
+            
             return Ok(new
             {
                 Message = "Moderator logged in successfully",
