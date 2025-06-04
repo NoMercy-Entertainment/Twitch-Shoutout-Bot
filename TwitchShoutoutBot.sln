@@ -1,0 +1,27 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TwitchShoutout.Server", "TwitchShoutout.Server\TwitchShoutout.Server.csproj", "{206CA5FF-F770-40E4-8AE6-8D4E27589FA6}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{260A8506-E7F3-4BFB-82B3-A40AE303CB4B}"
+	ProjectSection(SolutionItems) = preProject
+		compose.yaml = compose.yaml
+	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TwitchShoutout.Database", "TwitchShoutout.Database\TwitchShoutout.Database.csproj", "{6514B725-FFA9-4423-B625-204DA178AAC5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{206CA5FF-F770-40E4-8AE6-8D4E27589FA6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{206CA5FF-F770-40E4-8AE6-8D4E27589FA6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{206CA5FF-F770-40E4-8AE6-8D4E27589FA6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{206CA5FF-F770-40E4-8AE6-8D4E27589FA6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6514B725-FFA9-4423-B625-204DA178AAC5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6514B725-FFA9-4423-B625-204DA178AAC5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6514B725-FFA9-4423-B625-204DA178AAC5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6514B725-FFA9-4423-B625-204DA178AAC5}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

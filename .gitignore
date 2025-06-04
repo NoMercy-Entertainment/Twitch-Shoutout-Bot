@@ -1,0 +1,7 @@
+.env
+appsettings.json
+twitch_token.json
+
+# .NET Core build folders
+bin/
+obj/

@@ -1,0 +1,7 @@
+﻿services:
+  twitchshoutoutbot:
+    image: twitchshoutoutbot
+    build:
+      context: .
+      dockerfile: TwitchShoutoutBot/Dockerfile
+

@@ -1,0 +1,72 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UserSecretsId>dotnet-TwitchShoutoutBot-5a8589e8-846e-4f97-bf03-f31a6d6a9f65</UserSecretsId>
+        <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+
+        <Authors>NoMercy Entertainment</Authors>
+        <Description>The Effortless Encoder</Description>
+        <Copyright>2025 NoMercy Entertainment</Copyright>
+        <PackageProjectUrl>https://nomercy.tv</PackageProjectUrl>
+        <PackageIcon>Assets\icon.png</PackageIcon>
+        <Company>NoMercy Entertainment</Company>
+        <Product>NoMercy MediaServer</Product>
+        <LangVersion>12</LangVersion>
+        <BuildFrameworkVersion>6.0.2</BuildFrameworkVersion>
+        <PublishWithAspNetCoreTargetManifest>false</PublishWithAspNetCoreTargetManifest>
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+        <RepositoryUrl>https://github.com/NoMercy-Entertainment/NoMercyMediaServer</RepositoryUrl>
+        <PackageTags>streaming media content-management private streaming-video streaming-audio blurayrip video-encoder</PackageTags>
+        <NeutralLanguage>en</NeutralLanguage>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Asp.Versioning.Http" Version="8.1.0"/>
+        <PackageReference Include="Asp.Versioning.Mvc" Version="8.1.0"/>
+        <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.0"/>
+        <PackageReference Include="AspNet.Security.OAuth.Twitch" Version="9.4.0" />
+        <PackageReference Include="AspNetCore.SwaggerUI.Themes" Version="2.0.0" />
+        <PackageReference Include="DotNetBungieAPI.AspNet.Security.OAuth.Providers" Version="1.0.2"/>
+        <PackageReference Include="DotNetEnv" Version="3.1.1" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.2" />
+        <PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="9.0.2" />
+        <PackageReference Include="Microsoft.AspNetCore.SignalR.Protocols.NewtonsoftJson" Version="10.0.0-preview.2.25164.1" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.5" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.5"/>
+        <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.5.0" />
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+        <PackageReference Include="NodaTime" Version="3.2.2" />
+        <PackageReference Include="RestSharp" Version="112.1.0" />
+        <PackageReference Include="Swashbuckle.AspNetCore.Newtonsoft" Version="7.2.0" />
+        <PackageReference Include="Swashbuckle.AspNetCore.Swagger" Version="7.2.0" />
+        <PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" Version="7.2.0" />
+        <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="7.2.0" />
+        <PackageReference Include="System.Configuration.ConfigurationManager" Version="9.0.5" />
+        <PackageReference Include="TwitchLib.Api" Version="3.10.0-preview-e47ba7f" />
+        <PackageReference Include="TwitchLib.Client" Version="3.3.1" />
+        <PackageReference Include="Ulid" Version="1.3.4"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <Content Include="..\.dockerignore">
+        <Link>.dockerignore</Link>
+      </Content>
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\TwitchShoutout.Database\TwitchShoutout.Database.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Update="appsettings.json" CopyToOutputDirectory="Never" />
+        <None Update="appsettings.Development.json" CopyToOutputDirectory="Never" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Folder Include="Api\" />
+        <Folder Include="wwwroot\" />
+    </ItemGroup>
+</Project>
