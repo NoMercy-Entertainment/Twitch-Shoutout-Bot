@@ -264,7 +264,7 @@ public class Worker : BackgroundService
             if (availableShoutouts.Count == 0)
             {
                 Console.WriteLine($"No shoutouts available for channel {channel.Name}.");
-                return;-
+                return;
             }
 
             // Filter out shoutouts given in the last hour
