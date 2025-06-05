@@ -17,7 +17,6 @@ public class Worker : BackgroundService
     private TwitchMessageProcessingService _messageProcessingService = null!;
     private readonly BotDbContext _dbContext;
     private TwitchClient? _botClient;
-    private readonly Dictionary<(string, string), DateTimeOffset> _lastShoutoutTimes = new();
 
     public Worker(TwitchApiService apiService, TwitchAuthService authService, BotDbContext dbContext)
     {
@@ -109,6 +108,7 @@ public class Worker : BackgroundService
 
     private async Task InitializeBotClient(CancellationToken stoppingToken)
     {
+        Console.WriteLine("Initializing bot client...");
         if (TwitchAuthService.IsTokenExpired())
         {
             await TwitchAuthService.RefreshAccessTokenAsync();
@@ -123,6 +123,7 @@ public class Worker : BackgroundService
 
     private async Task InitializeChannelClients(CancellationToken stoppingToken)
     {
+        Console.WriteLine("Initializing channel clients...");
         List<Channel> enabledChannels = await _dbContext.Channels
             .Include(c => c.User)
             .Where(c => c.Enabled)
@@ -144,7 +145,9 @@ public class Worker : BackgroundService
                 Console.WriteLine($"Already connected to channel: {channel.Name}");
                 return;
             }
-
+            
+            Console.WriteLine($"Connecting to channel: {channel.Name}");
+            
             TwitchClient client = new();
             ConnectionCredentials credentials = new(Globals.BotUsername, Globals.AccessToken);
             client.Initialize(credentials, channel.Name);
@@ -172,6 +175,7 @@ public class Worker : BackgroundService
 
     private void SetupClientEventHandlers(TwitchClient client, Channel channel)
     {
+        Console.WriteLine($"Setting up event handlers for channel: {channel.Name}");
         client.OnMessageReceived += (_, e) =>
         {
             // if (e.ChatMessage.Username.Equals(Globals.BotUsername, StringComparison.OrdinalIgnoreCase))
@@ -209,6 +213,7 @@ public class Worker : BackgroundService
 
     private async Task StartTokenRefreshForChannels(CancellationToken stoppingToken)
     {
+        Console.WriteLine("Starting token refresh for all channels...");
         List<Channel> channels = await _dbContext.Channels
             .Include(c => c.User)
             .Where(c => c.Enabled)
@@ -258,6 +263,17 @@ public class Worker : BackgroundService
     {
         try
         {
+            await using BotDbContext db = new();
+            
+            TimeSpan channelTimeout = TimeSpan.FromMinutes(channel.ShoutoutInterval);
+
+            if (channel.LastShoutout.HasValue && (DateTime.UtcNow - channel.LastShoutout) < channelTimeout)
+            {
+                TimeSpan timeLeft = channelTimeout - (DateTime.UtcNow - channel.LastShoutout.Value);
+                Console.WriteLine($"Channel shoutout is on cooldown.  Try again in {timeLeft.Minutes}m {timeLeft.Seconds}s.");
+                return;
+            }
+
             // Get all shoutouts for the channel
             ICollection<Shoutout> availableShoutouts = channel.Shoutouts;
 
@@ -269,39 +285,41 @@ public class Worker : BackgroundService
 
             // Filter out shoutouts given in the last hour
             List<Shoutout> eligibleShoutouts = availableShoutouts
-                .Where(s => !_lastShoutoutTimes.TryGetValue((channel.Id, s.ShoutedUserId), out DateTimeOffset lastShoutoutTime) ||
-                            DateTimeOffset.UtcNow - lastShoutoutTime >= TimeSpan.FromMinutes(60 / availableShoutouts.Count))
+                .Where(s => s.LastShoutout == null || DateTime.UtcNow - s.LastShoutout >= TimeSpan.FromHours(1))
                 .ToList();
+
+            if (!eligibleShoutouts.Any())
+            {
+                Console.WriteLine($"No eligible shoutouts available for channel {channel.Name} at this time.");
+                return;
+            }
 
             Random random = new();
             int randomIndex = random.Next(eligibleShoutouts.Count);
             Shoutout shoutout = eligibleShoutouts[randomIndex];
-            
-            string userCooldownKey = $"{channel.Name}-{shoutout.ShoutedUser.DisplayName}";
 
-            if (!_messageProcessingService._channelShoutoutCooldowns.TryGetValue(channel.Name, out DateTime lastChannelShoutout)
-                || (DateTime.UtcNow - lastChannelShoutout) >= _messageProcessingService._channelCooldown)
+            // Perform shoutout
+            try
             {
-                string message = TwitchMessageProcessingService.ReplaceTemplatePlaceholders(channel, shoutout.ShoutedUser);
-
-                string color = TwitchMessageProcessingService.AnnouncementColors[
-                    _messageProcessingService._random.Next(TwitchMessageProcessingService.AnnouncementColors.Length)];
-                await _apiService.SendAnnouncement(channel.Id, message, color);
-                
                 await _apiService.Shoutout(channel.Id, shoutout.ShoutedUserId);
-                
-                _messageProcessingService._channelShoutoutCooldowns[channel.Name] = DateTime.UtcNow;
-                _messageProcessingService._userShoutoutCooldowns[userCooldownKey] = DateTime.UtcNow;
+
+                // Update shoutout timestamps
+                channel.LastShoutout = DateTime.UtcNow;
+                shoutout.LastShoutout = DateTime.UtcNow;
+                db.Channels.Update(channel);
+                db.Shoutouts.Update(shoutout);
+                await db.SaveChangesAsync();
             }
-            else
+            catch (Exception e)
             {
-                TimeSpan timeLeft = _messageProcessingService._channelCooldown - (DateTime.UtcNow - lastChannelShoutout);
-                Console.WriteLine($"Channel shoutout is on cooldown.  Try again in {timeLeft.Minutes}m {timeLeft.Seconds}s.");
+                Console.WriteLine($"Failed to send shoutout for {shoutout.ShoutedUser.Username} in channel {channel.Name}: {e.Message}");
                 return;
             }
 
-            // Update the last shoutout time in memory
-            _lastShoutoutTimes[(channel.Id, shoutout.ShoutedUserId)] = DateTimeOffset.UtcNow;
+            string message = TwitchMessageProcessingService.ReplaceTemplatePlaceholders(channel, shoutout.ShoutedUser);
+            string color = TwitchMessageProcessingService.AnnouncementColors[
+                _messageProcessingService.Random.Next(TwitchMessageProcessingService.AnnouncementColors.Length)];
+            await _apiService.SendAnnouncement(channel.Id, message, color);
 
             Console.WriteLine($"Automatic shoutout given in {channel.Name} to {shoutout.ShoutedUser.Username}.");
         }

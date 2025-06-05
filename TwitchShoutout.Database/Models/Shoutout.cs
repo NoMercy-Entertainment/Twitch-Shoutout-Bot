@@ -13,7 +13,9 @@ public class Shoutout
     [MaxLength(50)]
     [JsonProperty("id")] public string Id { get; set; } = null!;
     [JsonProperty("enabled")] public bool Enabled { get; set; }
-    [JsonProperty("message")] public string MessageTemplate { get; set; } = string.Empty;
+    [JsonProperty("message_template")] public string MessageTemplate { get; set; } = BotDbConfig.DefaultShoutoutTemplate;
+    
+    [JsonProperty("last_shoutout")] public DateTime? LastShoutout { get; set; }
     
     [JsonProperty("channel_id")] public string ChannelId { get; set; } = null!;
     [JsonProperty("channel")]  public Channel Channel { get; set; } = null!;

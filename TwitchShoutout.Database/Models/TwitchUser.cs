@@ -56,10 +56,11 @@ public class TwitchUser
 
     [JsonProperty("channel")] public virtual Channel Channel { get; set; } = null!;
     
-    [JsonProperty("pronoun")] public string? PronounData { get; set; }
+    [JsonIgnore]
+    public string? PronounData { get; set; }
 
     [NotMapped]
-    public Pronoun? Pronoun
+    [JsonProperty("pronoun")] public Pronoun? Pronoun
     {
         get => !string.IsNullOrEmpty(PronounData) 
             ? JsonConvert.DeserializeObject<Pronoun>(PronounData) 

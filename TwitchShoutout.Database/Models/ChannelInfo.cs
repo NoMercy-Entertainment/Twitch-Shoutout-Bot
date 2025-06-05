@@ -26,10 +26,11 @@ public class ChannelInfo
     
     [JsonProperty("delay")] public int Delay { get; set; }
     
-    [JsonProperty("tags")] public string TagsJson { get; set; } = "[]";
+    [JsonIgnore]
+    public string TagsJson { get; set; } = "[]";
     
     [NotMapped]
-    public List<string> Tags
+    [JsonProperty("tags")] public List<string> Tags
     {
         get => JsonConvert.DeserializeObject<List<string>>(TagsJson) ?? [];
         set => TagsJson = JsonConvert.SerializeObject(value);

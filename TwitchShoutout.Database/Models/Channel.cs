@@ -18,8 +18,11 @@ public class Channel
 
     [MaxLength(450)]
     [JsonProperty("shoutout_template")]
-    public string ShoutoutTemplate { get; set; } =
-        "Check out @{name}! {subject} {tense} streaming {game}: {title}. Go give {object} a follow!";
+    public string ShoutoutTemplate { get; set; } = BotDbConfig.DefaultShoutoutTemplate;
+    
+    [JsonProperty("last_shoutout")] public DateTime? LastShoutout { get; set; }
+    
+    [JsonProperty("shoutout_interval")] public int ShoutoutInterval { get; set; } = 10;
 
     [ForeignKey(nameof(Id))]
     [JsonProperty("broadcaster")] public virtual TwitchUser User { get; set; } = null!;
