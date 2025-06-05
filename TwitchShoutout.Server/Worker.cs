@@ -135,6 +135,12 @@ public class Worker : BackgroundService
     {
         try
         {
+            if (_clients.ContainsKey(channel.Name))
+            {
+                Console.WriteLine($"Already connected to channel: {channel.Name}");
+                return;
+            }
+            
             TwitchClient client = new();
             ConnectionCredentials credentials = new(Globals.BotUsername, Globals.AccessToken);
             client.Initialize(credentials, channel.Name);

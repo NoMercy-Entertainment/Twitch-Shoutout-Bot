@@ -86,7 +86,7 @@ public static class Globals
         // { "channel:moderate", "Perform moderation actions in a channel." },
         // { "clips:edit", "Manage Clips for a channel." },
         { "moderation:read", "View a channel’s moderation data including Moderators, Bans, Timeouts, and Automod settings." },
-        // { "moderator:manage:announcements", "Send announcements in channels where you have the moderator role." },
+        { "moderator:manage:announcements", "Send announcements in channels where you have the moderator role." },
         // { "moderator:manage:automod", "Manage messages held for review by AutoMod in channels where you are a moderator." },
         // { "moderator:read:automod_settings", "View a broadcaster’s AutoMod settings." },
         // { "moderator:manage:automod_settings", "Manage a broadcaster’s AutoMod settings." },

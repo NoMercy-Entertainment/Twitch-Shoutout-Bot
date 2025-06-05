@@ -1,7 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using TwitchLib.Client;
+using TwitchLib.Client.Extensions;
 using TwitchShoutout.Database;
 using TwitchShoutout.Database.Models;
+using TwitchShoutout.Server.Dtos;
 using TwitchShoutout.Server.Helpers;
 
 namespace TwitchShoutout.Server.Services;
@@ -10,7 +12,16 @@ public class TwitchMessageProcessingService
 {
     private readonly Dictionary<string, TwitchClient> _clients;
     private readonly TwitchApiService _apiService;
-    private readonly Dictionary<string, DateTime> _shoutoutCooldowns = new();
+    // ChannelName, DateTime
+    private readonly Dictionary<string, DateTime> _channelShoutoutCooldowns = new();
+    // ChannelName + UserId, DateTime
+    private readonly Dictionary<string, DateTime> _userShoutoutCooldowns = new();
+    private readonly TimeSpan _channelCooldown = TimeSpan.FromMinutes(2);
+    private readonly TimeSpan _userCooldown = TimeSpan.FromHours(1);
+    
+    private readonly Random _random = new();
+    private static readonly string[] AnnouncementColors = { "blue", "green", "orange", "purple", "primary" };
+
 
     public TwitchMessageProcessingService(Dictionary<string, TwitchClient> clients, TwitchApiService apiService)
     {
@@ -42,19 +53,21 @@ public class TwitchMessageProcessingService
         client.SendMessage(channelName, message);
     }
     
+    private async Task SendAnnouncement(string channelId, string message)
+    {        
+        string color = AnnouncementColors[_random.Next(AnnouncementColors.Length)];
+        await _apiService.SendAnnouncement(channelId, message, color);
+    }
+    
     public async Task HandleCommand(ParsedMessage parsedMessage, Channel channel)
     {
         if (!parsedMessage.IsCommand) return;
-        
-        if (_shoutoutCooldowns.TryGetValue(parsedMessage.Key, out DateTime lastUsed))
-        {
-            if ((DateTime.UtcNow - lastUsed).TotalSeconds < 30) return;
-        }
 
         switch (parsedMessage.CommandName?.ToLower())
         {
             case "so":
-                await HandleShoutoutCommand(parsedMessage, channel);
+                if (parsedMessage.IsAdmin)
+                    await HandleShoutoutCommand(parsedMessage, channel);
                 break;
             case "addso":
                 if (parsedMessage.IsAdmin)
@@ -135,42 +148,107 @@ public class TwitchMessageProcessingService
     
     private async Task HandleShoutoutCommand(ParsedMessage parsedMessage, Channel channel)
     {
-        await using BotDbContext db = new();
-
-        string shoutedUser = !string.IsNullOrWhiteSpace(parsedMessage.Arguments)
-            ? parsedMessage.ArgumentList[0].Replace("@","").ToLower()
-            : parsedMessage.ChatMessage.Username;
-
-        TwitchUser user = await db.TwitchUsers
-            .Include(twitchUser => twitchUser.Channel)
-            .ThenInclude(c => c.Info)
-            .FirstOrDefaultAsync(u => u.Username == shoutedUser) ?? await _apiService.FetchUser(id: shoutedUser);
-
-        // Replace placeholders in the template
-        string message = ReplaceTemplatePlaceholders(user);
-
-        SendMessage(channel.Name, message);
-
         try
         {
-            await _apiService.Shoutout(parsedMessage.ChatMessage.RoomId, shoutedUser);
-        }
-        catch (Exception exception)
-        {
-            SendMessage(channel.Name, $"Failed to send shoutout: {exception.Message}");
-        }
+            await using BotDbContext db = new();
+            
+            string shoutedUser = !string.IsNullOrWhiteSpace(parsedMessage.Arguments)
+                ? parsedMessage.ArgumentList[0].Replace("@","").ToLower()
+                : parsedMessage.ChatMessage.Username;
+            
+            TwitchUser user = await db.TwitchUsers
+                .Include(twitchUser => twitchUser.Channel)
+                .ThenInclude(c => c.Info)
+                .FirstOrDefaultAsync(u => u.Username == shoutedUser) 
+                              ?? await _apiService.FetchUser(id: shoutedUser);
 
-        _shoutoutCooldowns[parsedMessage.Key] = DateTime.UtcNow;
+            // Replace placeholders in the template
+            string message = ReplaceTemplatePlaceholders(channel, user);
+
+            await SendAnnouncement(channel.Id, message);
+            
+            if (_channelShoutoutCooldowns.TryGetValue(channel.Name, out DateTime lastChannelShoutout) &&
+                (DateTime.UtcNow - lastChannelShoutout) < _channelCooldown)
+            {
+                TimeSpan timeLeft = _channelCooldown - (DateTime.UtcNow - lastChannelShoutout);
+                SendMessage(channel.Name, $"Channel shoutout is on cooldown.  Try again in {timeLeft.Minutes}m {timeLeft.Seconds}s.");
+                return;
+            }
+            
+            string userCooldownKey = $"{channel.Name}-{shoutedUser}";
+
+            // Check user cooldown
+            if (_userShoutoutCooldowns.TryGetValue(userCooldownKey, out DateTime lastUserShoutout) &&
+                (DateTime.UtcNow - lastUserShoutout) < _userCooldown)
+            {
+                TimeSpan timeLeft = _userCooldown - (DateTime.UtcNow - lastUserShoutout);
+                SendMessage(channel.Name, $"@{shoutedUser} was recently shouted out in this channel.  Try again in {timeLeft.Hours}h {timeLeft.Minutes}m.");
+                return;
+            }
+            
+            try
+            {
+                await _apiService.Shoutout(parsedMessage.ChatMessage.RoomId, shoutedUser);
+            }
+            catch (Exception exception)
+            {
+                SendMessage(channel.Name, $"Failed to send shoutout: {exception.Message}");
+                return; // Stop here if the Twitch API shoutout fails
+            }
+
+            // Update cooldowns only if the shoutout was successful
+            _channelShoutoutCooldowns[channel.Name] = DateTime.UtcNow;
+            _userShoutoutCooldowns[userCooldownKey] = DateTime.UtcNow;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+        }
     }
-    
-    private string ReplaceTemplatePlaceholders(TwitchUser user)
+
+    private string ReplaceTemplatePlaceholders(Channel channel, TwitchUser user)
     {
-        string shoutoutTemplate = user.Channel.ShoutoutTemplate ?? "Check out @{name}!";
+        string shoutoutTemplate = channel.ShoutoutTemplate ?? "Check out @{name} give {object} a follow!";
         shoutoutTemplate = shoutoutTemplate.Replace("{name}", user.DisplayName);
-        shoutoutTemplate = shoutoutTemplate.Replace("{subject}", user.Pronoun?.Subject ?? "they");
+
+        string subjectPronoun = user.Pronoun?.Subject ?? "They";
+        string beVerb = subjectPronoun.ToLower() switch
+        {
+            "he" or "she" or "it" => "Is",
+            _ => "Are"
+        };
+        string wasVerb = subjectPronoun.ToLower() switch
+        {
+            "he" or "she" or "it" => "Was",
+            _ => "Were"
+        };
+
+        shoutoutTemplate = shoutoutTemplate.Replace("{presentTense}", beVerb.ToLower());
+        shoutoutTemplate = shoutoutTemplate.Replace("{PresentTense}", beVerb);
+        shoutoutTemplate = shoutoutTemplate.Replace("{pastTense}", wasVerb.ToLower());
+        shoutoutTemplate = shoutoutTemplate.Replace("{PastTense}", wasVerb);
+        shoutoutTemplate = shoutoutTemplate.Replace("{tense}", user.IsLive ? beVerb.ToLower() : wasVerb.ToLower());
+        shoutoutTemplate = shoutoutTemplate.Replace("{Tense}", user.IsLive ? beVerb : wasVerb);
+
+        if (string.IsNullOrWhiteSpace(user.Channel.Info.GameName) || string.IsNullOrWhiteSpace(user.Channel.Info.Title)){
+            return $"Check out @{user.DisplayName} give ${user.Pronoun?.Object} a follow!";
+        }
+        
+        shoutoutTemplate = shoutoutTemplate.Replace("{subject}", user.Pronoun?.Subject.ToLower() ?? "they");
+        shoutoutTemplate = shoutoutTemplate.Replace("{Subject}", user.Pronoun?.Subject ?? "They");
+        shoutoutTemplate = shoutoutTemplate.Replace("{object}", user.Pronoun?.Object.ToLower() ?? "Them");
+        shoutoutTemplate = shoutoutTemplate.Replace("{Object}", user.Pronoun?.Object ?? "them");
+        
         shoutoutTemplate = shoutoutTemplate.Replace("{game}", user.Channel.Info.GameName);
         shoutoutTemplate = shoutoutTemplate.Replace("{title}", user.Channel.Info.Title);
-
+        
+        shoutoutTemplate = shoutoutTemplate.Replace("{link}", $"https://www.twitch.tv/{user.Username}");
+        shoutoutTemplate = shoutoutTemplate.Replace("{username}", user.Username);
+        shoutoutTemplate = shoutoutTemplate.Replace("{displayname}", user.DisplayName);
+        shoutoutTemplate = shoutoutTemplate.Replace("{id}", user.Id);
+        shoutoutTemplate = shoutoutTemplate.Replace("{status}", user.IsLive ? "live" : "offline");
+        shoutoutTemplate = shoutoutTemplate.Replace("{Status}", user.IsLive ? "Live" : "Offline");
+        
         return shoutoutTemplate;
     }
 
@@ -203,7 +281,7 @@ public class TwitchMessageProcessingService
         Shoutout newShoutout = new()
         {
             ChannelId = parsedMessage.ChatMessage.RoomId,
-            MessageTemplate = channel.ShoutoutTemplate ?? "Check out @{shoutedUser}!",
+            MessageTemplate = channel.ShoutoutTemplate ?? "Check out @{name} give {subject} a follow!",
             Enabled = true,
             ShoutedUserId = newUser.Id
         };

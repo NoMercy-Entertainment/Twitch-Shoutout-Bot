@@ -14,7 +14,7 @@ public class Channel
     
     [MaxLength(25)]
     [JsonProperty("name")] public string Name { get; set; } = null!;
-    [JsonProperty("enabled")] public bool Enabled { get; set; } = true;
+    [JsonProperty("enabled")] public bool Enabled { get; set; }
     
     [MaxLength(450)]
     [JsonProperty("shoutout_template")] public string? ShoutoutTemplate { get; set; }

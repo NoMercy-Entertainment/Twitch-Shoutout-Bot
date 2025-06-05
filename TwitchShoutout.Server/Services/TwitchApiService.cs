@@ -2,6 +2,7 @@
 // ReSharper disable MemberCanBeMadeStatic.Global
 
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
 using NodaTime.TimeZones;
 using RestSharp;
 using TwitchShoutout.Database;
@@ -111,6 +112,23 @@ public class TwitchApiService
         request.AddParameter("from_broadcaster_id", chatMessageChannel);
         request.AddParameter("to_broadcaster_id", user.Id);
         request.AddParameter("moderator_id", Globals.BotId);
+
+        await ExecuteTwitchRequest<object>(request);
+    }
+    
+    public async Task SendAnnouncement(string broadcasterId, string message, string? color = null)
+    {
+        RestRequest request = CreateTwitchRequest("chat/announcements", Method.Post);
+        request.AddQueryParameter("broadcaster_id", broadcasterId);
+        request.AddQueryParameter("moderator_id", broadcasterId);
+
+        AnnouncementRequest announcement = new()
+        {
+            Message = message,
+            Color = color
+        };
+
+        request.AddJsonBody(announcement);
 
         await ExecuteTwitchRequest<object>(request);
     }
@@ -271,4 +289,10 @@ public class TwitchApiService
                 .RunAsync();
         }
     }
+}
+
+public class AnnouncementRequest
+{
+    [JsonProperty("message")] public string Message { get; set; } = string.Empty;
+    [JsonProperty("color")] public string? Color { get; set; }
 }
