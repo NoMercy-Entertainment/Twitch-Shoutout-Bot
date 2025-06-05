@@ -1,0 +1,18 @@
+{
+  "access_token": "fill in with your access token, you can make one on https://twitchtoken.nomercy.tv make sure to select the scopes listed below",
+  "expires_in": 0,
+  "refresh_token": "fill in with your refresh token and rename the file to twitch_token.json",
+  "scope": [
+    "channel:bot",
+    "chat:edit",
+    "chat:read",
+    "moderation:read",
+    "moderator:manage:announcements",
+    "moderator:manage:shoutouts",
+    "moderator:read:shoutouts",
+    "user:bot",
+    "user:read:broadcast",
+    "user:read:moderated_channels"
+  ],
+  "token_type": "bearer"
+}
