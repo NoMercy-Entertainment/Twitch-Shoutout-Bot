@@ -212,7 +212,7 @@ public static class ServiceConfiguration
                     return;
                 }
     
-                ValidatedTokenResponse? user = response.Content?.FromJson<ValidatedTokenResponse>();
+                ValidatedTwitchAuthResponse? user = response.Content?.FromJson<ValidatedTwitchAuthResponse>();
                 if (user?.UserId is null)
                 {
                     message.Fail("Invalid token");

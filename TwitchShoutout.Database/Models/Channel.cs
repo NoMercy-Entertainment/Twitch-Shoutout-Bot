@@ -15,9 +15,11 @@ public class Channel
     [MaxLength(25)]
     [JsonProperty("name")] public string Name { get; set; } = null!;
     [JsonProperty("enabled")] public bool Enabled { get; set; }
-    
+
     [MaxLength(450)]
-    [JsonProperty("shoutout_template")] public string? ShoutoutTemplate { get; set; }
+    [JsonProperty("shoutout_template")]
+    public string ShoutoutTemplate { get; set; } =
+        "Check out @{name}! {subject} {tense} streaming {game}: {title}. Go give {object} a follow!";
 
     [ForeignKey(nameof(Id))]
     [JsonProperty("broadcaster")] public virtual TwitchUser User { get; set; } = null!;

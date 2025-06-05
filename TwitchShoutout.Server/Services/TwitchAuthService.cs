@@ -48,7 +48,7 @@ public class TwitchAuthService
         return result;
     }
 
-    public async Task<TokenResponse> Callback(string code)
+    public async Task<TwitchAuthResponse> Callback(string code)
     {
         RestRequest request = CreateAuthRequest("token")
             .AddParameter("code", code)
@@ -56,31 +56,31 @@ public class TwitchAuthService
             .AddParameter("grant_type", "authorization_code")
             .AddParameter("redirect_uri", Globals.RedirectUri);
 
-        return await ExecuteRequest<TokenResponse>(request, _authClient);
+        return await ExecuteRequest<TwitchAuthResponse>(request, _authClient);
     }
 
-    public async Task<ValidatedTokenResponse> ValidateToken(string accessToken)
+    public async Task<ValidatedTwitchAuthResponse> ValidateToken(string accessToken)
     {
         RestRequest request = new RestRequest("validate")
             .AddHeader("Authorization", $"Bearer {accessToken}");
 
-        return await ExecuteRequest<ValidatedTokenResponse>(request, _authClient);
+        return await ExecuteRequest<ValidatedTwitchAuthResponse>(request, _authClient);
     }
 
-    public Task<ValidatedTokenResponse> ValidateToken(HttpRequest request)
+    public Task<ValidatedTwitchAuthResponse> ValidateToken(HttpRequest request)
     {
         string authHeader = request.Headers["Authorization"].First() ?? throw new("Missing Authorization header");
         string accessToken = authHeader["Bearer ".Length..];
         return ValidateToken(accessToken);
     }
 
-    public async Task<TokenResponse> RefreshToken(string refreshToken)
+    public async Task<TwitchAuthResponse> RefreshToken(string refreshToken)
     {
         RestRequest request = CreateAuthRequest("token")
             .AddParameter("refresh_token", refreshToken)
             .AddParameter("grant_type", "refresh_token");
 
-        return await ExecuteRequest<TokenResponse>(request, _authClient);
+        return await ExecuteRequest<TwitchAuthResponse>(request, _authClient);
     }
 
     public async Task RevokeToken(string accessToken)
@@ -115,17 +115,17 @@ public class TwitchAuthService
         return await ExecuteRequest<DeviceCodeResponse>(request, _authClient);
     }
 
-    public async Task<TokenResponse> PollForToken(string deviceCode)
+    public async Task<TwitchAuthResponse> PollForToken(string deviceCode)
     {
         RestRequest request = CreateAuthRequest("token")
             .AddParameter("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
             .AddParameter("device_code", deviceCode)
             .AddParameter("scopes", string.Join(' ', Globals.Scopes.Keys));
 
-        return await ExecuteRequest<TokenResponse>(request, _authClient);
+        return await ExecuteRequest<TwitchAuthResponse>(request, _authClient);
     }
 
-    public static async Task<TwitchAuthResponse> RefreshAccessTokenAsync(string? refreshToken = null)
+    public static async Task<TwitchAuthResponse?> RefreshAccessTokenAsync(string? refreshToken = null)
     {
         Console.WriteLine("Refreshing Twitch access token...");
         using HttpClient client = new();
@@ -154,6 +154,7 @@ public class TwitchAuthService
     public async Task StartTokenRefreshForChannel(TwitchUser user, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(user.RefreshToken)) return;
+        Console.WriteLine($"Starting automatic token refresh for {user.Username}...");
     
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -161,7 +162,7 @@ public class TwitchAuthService
             {
                 if (user.TokenExpiry <= DateTime.UtcNow.AddMinutes(5))
                 {
-                    TokenResponse response = await RefreshToken(user.RefreshToken);
+                    TwitchAuthResponse response = await RefreshToken(user.RefreshToken);
                     user.AccessToken = response.AccessToken;
                     user.RefreshToken = response.RefreshToken;
                     user.TokenExpiry = DateTime.UtcNow.AddSeconds(response.ExpiresIn);

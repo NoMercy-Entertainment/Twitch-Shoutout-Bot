@@ -32,12 +32,12 @@ public class TwitchApiService
         Globals.BotId = botId;
     }
 
-    private RestRequest CreateTwitchRequest(string endpoint, Method method = Method.Get, TokenResponse? tokenResponse = null)
+    private RestRequest CreateTwitchRequest(string endpoint, Method method = Method.Get, string? accessToken = null)
     {
         if (string.IsNullOrEmpty(Globals.AccessToken)) throw new("No access token provided.");
 
         RestRequest request = new(endpoint, method);
-        request.AddHeader("Authorization", $"Bearer {tokenResponse?.AccessToken ?? Globals.AccessToken}");
+        request.AddHeader("Authorization", $"Bearer {accessToken ?? Globals.AccessToken}");
         request.AddHeader("Client-Id", Globals.ClientId);
         return request;
     }
@@ -101,15 +101,15 @@ public class TwitchApiService
         return await ExecuteTwitchRequest<GetUserChatColorResponse>(request);
     }
 
-    public async Task Shoutout(string chatMessageChannel, string chatMessageUserName)
+    public async Task Shoutout(string chatMessageChannelId, string chatMessageUserName)
     {
-        if (string.IsNullOrEmpty(chatMessageChannel) || string.IsNullOrEmpty(chatMessageUserName))
+        if (string.IsNullOrEmpty(chatMessageChannelId) || string.IsNullOrEmpty(chatMessageUserName))
             throw new("Channel and user must be provided.");
 
         UserInfo user = await GetUser(chatMessageUserName) ?? throw new($"User {chatMessageUserName} not found.");
 
         RestRequest request = CreateTwitchRequest("chat/shoutouts", Method.Post);
-        request.AddParameter("from_broadcaster_id", chatMessageChannel);
+        request.AddParameter("from_broadcaster_id", chatMessageChannelId);
         request.AddParameter("to_broadcaster_id", user.Id);
         request.AddParameter("moderator_id", Globals.BotId);
 
@@ -120,7 +120,7 @@ public class TwitchApiService
     {
         RestRequest request = CreateTwitchRequest("chat/announcements", Method.Post);
         request.AddQueryParameter("broadcaster_id", broadcasterId);
-        request.AddQueryParameter("moderator_id", broadcasterId);
+        request.AddQueryParameter("moderator_id", Globals.BotId);
 
         AnnouncementRequest announcement = new()
         {
@@ -133,9 +133,9 @@ public class TwitchApiService
         await ExecuteTwitchRequest<object>(request);
     }
     
-    private async Task<ChannelInfo?> FetchChannelInfo(string broadcasterId, TokenResponse? tokenResponse)
+    private async Task<ChannelInfo?> FetchChannelInfo(string broadcasterId, TwitchAuthResponse? tokenResponse)
     {
-        RestRequest request = CreateTwitchRequest($"channels?broadcaster_id={broadcasterId}", Method.Get, tokenResponse);
+        RestRequest request = CreateTwitchRequest($"channels?broadcaster_id={broadcasterId}", Method.Get, tokenResponse?.AccessToken);
         ChannelInfoResponse? response = await ExecuteTwitchRequest<ChannelInfoResponse>(request);
     
         ChannelInfoDto? dto = response?.Data.FirstOrDefault();
@@ -155,7 +155,7 @@ public class TwitchApiService
         };
     }
 
-    public async Task<TwitchUser> FetchUser(TokenResponse? tokenResponse = null, string? countryCode = null, string? id = null, bool? enabled = false)
+    public async Task<TwitchUser> FetchUser(TwitchAuthResponse? tokenResponse = null, string? countryCode = null, string? id = null, bool? enabled = false)
     {
         UserInfo userInfo = await GetUser(id) ?? throw new("Failed to fetch user information.");
         TwitchUser user = await CreateTwitchUser(userInfo, tokenResponse, countryCode, enabled ?? false);
@@ -171,19 +171,24 @@ public class TwitchApiService
         return user;
     }
 
-    public async Task FetchModeration(string userInfoId, TokenResponse tokenResponse)
+    public async Task FetchModeration(string userInfoId, TwitchAuthResponse twitchAuthResponse)
     {
-        RestRequest request = CreateTwitchRequest("moderation/channels", Method.Get, tokenResponse);
+        RestRequest request = CreateTwitchRequest("moderation/channels");
         request.AddParameter("user_id", userInfoId);
 
         ChannelResponse? moderators = await ExecuteTwitchRequest<ChannelResponse>(request);
+        if (moderators == null || moderators.Data.Count == 0)
+        {
+            Console.WriteLine($"No moderators found for user {userInfoId}.");
+            return;
+        }
         await UpsertModerators(userInfoId, moderators);
     }
 
-    private bool ValidateUserIds(string[] userIds) =>
+    private static bool ValidateUserIds(string[] userIds) =>
         userIds.Length is > 0 and <= 100 && userIds.All(id => !string.IsNullOrEmpty(id));
 
-    private async Task<TwitchUser> CreateTwitchUser(UserInfo userInfo, TokenResponse? tokenResponse, string? countryCode, bool enabled = false)
+    private async Task<TwitchUser> CreateTwitchUser(UserInfo userInfo, TwitchAuthResponse? tokenResponse, string? countryCode, bool enabled = false)
     {
         List<string>? zoneIds = TzdbDateTimeZoneSource.Default.ZoneLocations?
             .Where(x => x.CountryCode == countryCode)
@@ -268,7 +273,7 @@ public class TwitchApiService
             .RunAsync();
     }
 
-    private async Task UpsertModerators(string channelId, ChannelResponse? moderators)
+    private async Task UpsertModerators(string channelId, ChannelResponse moderators)
     {
         foreach (ChannelData channelData in moderators.Data)
         {

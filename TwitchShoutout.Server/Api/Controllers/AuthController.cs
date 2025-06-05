@@ -27,15 +27,29 @@ public class AuthenticationController(BotDbContext dbContext, TwitchAuthService 
 
         try
         {
-            TokenResponse tokenResponse = await twitchAuthService.Callback(code);
+            TwitchAuthResponse twitchAuthResponse = await twitchAuthService.Callback(code);
             
             string countryCode = Request.Headers["CF-IPCountry"].ToString();
             
-            ValidatedTokenResponse validateResponse = await twitchAuthService.ValidateToken(tokenResponse.AccessToken);
+            ValidatedTwitchAuthResponse validateResponse = await twitchAuthService.ValidateToken(twitchAuthResponse.AccessToken);
 
-            TwitchUser userInfo = await twitchApiService.FetchUser(tokenResponse, countryCode, validateResponse.UserId, enabled: true);
+            TwitchUser userInfo = await twitchApiService.FetchUser(twitchAuthResponse, countryCode, validateResponse.UserId, enabled: true);
+            userInfo.AccessToken = twitchAuthResponse.AccessToken;
+            userInfo.RefreshToken = twitchAuthResponse.RefreshToken;
+            userInfo.TokenExpiry = DateTime.UtcNow.AddSeconds(twitchAuthResponse.ExpiresIn);
             
-            await twitchApiService.FetchModeration(userInfo.Id, tokenResponse);;
+            await dbContext.TwitchUsers.Upsert(userInfo)
+                .On(u => u.Id)
+                .WhenMatched((_, newUser) => new()
+                {
+                    AccessToken = newUser.AccessToken,
+                    RefreshToken = newUser.RefreshToken,
+                    TokenExpiry = newUser.TokenExpiry,
+                    Enabled = true
+                })
+                .RunAsync();
+            
+            await twitchApiService.FetchModeration(userInfo.Id, twitchAuthResponse);;
 
             // Get Worker from singleton registration
             Worker worker = HttpContext.RequestServices.GetRequiredService<Worker>();
@@ -44,13 +58,16 @@ public class AuthenticationController(BotDbContext dbContext, TwitchAuthService 
             Channel channel = userInfo.Channel;
             if (channel.Enabled)
             {
-                await worker.ConnectToChannel(channel, CancellationToken.None);
+                _ = Task.Run(() => worker.ConnectToChannel(channel, CancellationToken.None));
             }
+            
+            _ = Task.Run(() => twitchAuthService.StartTokenRefreshForChannel(userInfo, CancellationToken.None));
+
 
             return Ok(new
             {
                 Message = "logged in successfully",
-                User = new UserWithTokenDto(userInfo, tokenResponse),
+                User = new UserWithTokenDto(userInfo, twitchAuthResponse),
             });
         }
         catch (Exception e)
@@ -92,19 +109,19 @@ public class AuthenticationController(BotDbContext dbContext, TwitchAuthService 
         
         try
         {
-            TokenResponse tokenResponse = await twitchAuthService.RefreshToken(data.RefreshToken);
+            TwitchAuthResponse twitchAuthResponse = await twitchAuthService.RefreshToken(data.RefreshToken);
             
             TwitchUser user = await dbContext.TwitchUsers
                 .FirstAsync(u => u.Id == currentUser.Id);
-            user.AccessToken = tokenResponse.AccessToken;
-            user.RefreshToken = tokenResponse.RefreshToken;
-            user.TokenExpiry = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
+            user.AccessToken = twitchAuthResponse.AccessToken;
+            user.RefreshToken = twitchAuthResponse.RefreshToken;
+            user.TokenExpiry = DateTime.UtcNow.AddSeconds(twitchAuthResponse.ExpiresIn);
             await dbContext.SaveChangesAsync();
 
             return Ok(new
             {
                 Message = "Token refreshed successfully",
-                User = new UserWithTokenDto(user, tokenResponse),
+                User = new UserWithTokenDto(user, twitchAuthResponse),
             });
         }
         catch (Exception e)
@@ -186,20 +203,20 @@ public class AuthenticationController(BotDbContext dbContext, TwitchAuthService 
     {
         try
         {
-            TokenResponse tokenResponse = await twitchAuthService.PollForToken(data.DeviceCode);
+            TwitchAuthResponse twitchAuthResponse = await twitchAuthService.PollForToken(data.DeviceCode);
             
             string countryCode = Request.Headers["CF-IPCountry"].ToString();
             
-            ValidatedTokenResponse validateResponse = await twitchAuthService.ValidateToken(tokenResponse.AccessToken);
+            ValidatedTwitchAuthResponse validateResponse = await twitchAuthService.ValidateToken(twitchAuthResponse.AccessToken);
 
             string? userId = validateResponse.UserId;
 
-            TwitchUser userInfo = await twitchApiService.FetchUser(tokenResponse, countryCode, userId, enabled: true);
+            TwitchUser userInfo = await twitchApiService.FetchUser(twitchAuthResponse, countryCode, userId, enabled: true);
             
             return Ok(new
             {
                 Message = "Moderator logged in successfully",
-                User = new UserWithTokenDto(userInfo, tokenResponse),
+                User = new UserWithTokenDto(userInfo, twitchAuthResponse),
             });
 
         }

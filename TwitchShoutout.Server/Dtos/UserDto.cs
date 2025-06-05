@@ -46,16 +46,16 @@ public class UserWithTokenDto: UserDto
     [JsonProperty("refresh_token")] public string RefreshToken { get; set; }
     [JsonProperty("token_expiry")] public DateTime? TokenExpiry { get; set; }
     
-    public UserWithTokenDto(TwitchUser user, TokenResponse? tokenResponse = null) : base(user)
+    public UserWithTokenDto(TwitchUser user, TwitchAuthResponse? TwitchAuthResponse = null) : base(user)
     {
-        AccessToken = tokenResponse is not null && !string.IsNullOrEmpty(tokenResponse.AccessToken) 
-            ? tokenResponse.AccessToken 
+        AccessToken = TwitchAuthResponse is not null && !string.IsNullOrEmpty(TwitchAuthResponse.AccessToken) 
+            ? TwitchAuthResponse.AccessToken 
             : user.AccessToken ?? "";
-        RefreshToken = tokenResponse is not null && !string.IsNullOrEmpty(tokenResponse.RefreshToken) 
-            ? tokenResponse.RefreshToken  
+        RefreshToken = TwitchAuthResponse is not null && !string.IsNullOrEmpty(TwitchAuthResponse.RefreshToken) 
+            ? TwitchAuthResponse.RefreshToken  
             : user.RefreshToken ?? "";
-        TokenExpiry = tokenResponse?.ExpiresIn is not null
-            ? DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn)
+        TokenExpiry = TwitchAuthResponse?.ExpiresIn is not null
+            ? DateTime.UtcNow.AddSeconds(TwitchAuthResponse.ExpiresIn)
             : user.TokenExpiry;
     }
 }

@@ -34,12 +34,13 @@ public class Worker : BackgroundService
 
             // Initialize message processing service with bot client
             _messageProcessingService = new(_clients, _apiService);
-            // Load and initialize all enabled channels
-            await InitializeChannelClients(stoppingToken);
-
-            // Start token refresh for all channels
-            await StartTokenRefreshForChannels(stoppingToken);
             
+            _ = Task.Run(() =>
+            {
+                _ = InitializeChannelClients(stoppingToken);
+                _ = StartTokenRefreshForChannels(stoppingToken);
+            }, stoppingToken);
+
             stoppingToken.Register(async void () =>
             {
                 try
@@ -125,10 +126,11 @@ public class Worker : BackgroundService
             .Where(c => c.Enabled)
             .ToListAsync(stoppingToken);
 
-        foreach (Channel channel in enabledChannels)
-        {
-            ConnectToChannel(channel, stoppingToken);
-        }
+        List<Task> connectTasks = enabledChannels.Select(channel =>
+            ConnectToChannel(channel, stoppingToken)
+        ).ToList();
+
+        await Task.WhenAll(connectTasks);
     }
 
     internal async Task ConnectToChannel(Channel channel, CancellationToken stoppingToken)
@@ -210,9 +212,10 @@ public class Worker : BackgroundService
             .Where(c => c.Enabled)
             .ToListAsync(stoppingToken);
 
-        foreach (Channel channel in channels)
-        {
-            await _authService.StartTokenRefreshForChannel(channel.User, stoppingToken);
-        }
+        List<Task> refreshTasks = channels.Select(channel =>
+            Task.Run(() => _authService.StartTokenRefreshForChannel(channel.User, stoppingToken), stoppingToken)
+        ).ToList();
+
+        await Task.WhenAll(refreshTasks);
     }
 }

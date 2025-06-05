@@ -11,14 +11,14 @@ public static class ApplicationConfiguration
 {
     public static void ConfigureApp(WebApplication app)
     {
+        EnsureDatabase(app);
+        
         ConfigureLocalization(app);
         ConfigureMiddleware(app);
         ConfigureSwaggerUi(app);
         
         app.MapControllers();
         app.MapGet("/", () => Results.Redirect("/swagger"));
-        
-        EnsureDatabase(app);
     }
 
     private static void ConfigureLocalization(WebApplication app)

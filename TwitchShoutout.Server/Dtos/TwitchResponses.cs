@@ -3,9 +3,9 @@ using TwitchShoutout.Database.Models;
 
 namespace TwitchShoutout.Server.Dtos;
 
-public struct TwitchAuthResponse
+public class TwitchAuthResponse
 {
-    [JsonProperty("access_token")] public string AccessToken { get; set; }
+    [JsonProperty("access_token")] public string AccessToken { get; set; } 
     [JsonProperty("expires_in")] public long ExpiresIn { get; set; }
     [JsonProperty("refresh_token")] public string RefreshToken { get; set; }
     [JsonProperty("scope")] public string[] Scope { get; set; }
@@ -38,14 +38,7 @@ public class DeviceCodeResponse
     [JsonProperty("interval")] public int Interval { get; set; }
 }
 
-public class TokenResponse
-{
-    [JsonProperty("access_token")] public string AccessToken { get; set; } = string.Empty;
-    [JsonProperty("refresh_token")] public string RefreshToken { get; set; } = string.Empty;
-    [JsonProperty("expires_in")] public int ExpiresIn { get; set; }
-}
-
-public class ValidatedTokenResponse
+public class ValidatedTwitchAuthResponse
 {
     [JsonProperty("client_id")] public string ClientId { get; set; } = null!;
     [JsonProperty("login")] public string Login { get; set; } = null!;
@@ -53,7 +46,6 @@ public class ValidatedTokenResponse
     [JsonProperty("user_id")] public string UserId { get; set; } = null!;
     [JsonProperty("expires_in")] public int ExpiresIn { get; set; }
 }
-
 
 public class UserInfoResponse
 {

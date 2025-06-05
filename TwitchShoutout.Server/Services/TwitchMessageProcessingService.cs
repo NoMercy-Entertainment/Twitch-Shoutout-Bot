@@ -53,12 +53,6 @@ public class TwitchMessageProcessingService
         client.SendMessage(channelName, message);
     }
     
-    private async Task SendAnnouncement(string channelId, string message)
-    {        
-        string color = AnnouncementColors[_random.Next(AnnouncementColors.Length)];
-        await _apiService.SendAnnouncement(channelId, message, color);
-    }
-    
     public async Task HandleCommand(ParsedMessage parsedMessage, Channel channel)
     {
         if (!parsedMessage.IsCommand) return;
@@ -161,11 +155,11 @@ public class TwitchMessageProcessingService
                 .ThenInclude(c => c.Info)
                 .FirstOrDefaultAsync(u => u.Username == shoutedUser) 
                               ?? await _apiService.FetchUser(id: shoutedUser);
-
-            // Replace placeholders in the template
+            
             string message = ReplaceTemplatePlaceholders(channel, user);
 
-            await SendAnnouncement(channel.Id, message);
+            string color = AnnouncementColors[_random.Next(AnnouncementColors.Length)];
+            await _apiService.SendAnnouncement(channel.Id, message, color);
             
             if (_channelShoutoutCooldowns.TryGetValue(channel.Name, out DateTime lastChannelShoutout) &&
                 (DateTime.UtcNow - lastChannelShoutout) < _channelCooldown)
@@ -205,10 +199,10 @@ public class TwitchMessageProcessingService
             Console.WriteLine(e);
         }
     }
-
+    
     private string ReplaceTemplatePlaceholders(Channel channel, TwitchUser user)
     {
-        string shoutoutTemplate = channel.ShoutoutTemplate ?? "Check out @{name} give {object} a follow!";
+        string shoutoutTemplate = channel.ShoutoutTemplate;
         shoutoutTemplate = shoutoutTemplate.Replace("{name}", user.DisplayName);
 
         string subjectPronoun = user.Pronoun?.Subject ?? "They";
@@ -281,7 +275,7 @@ public class TwitchMessageProcessingService
         Shoutout newShoutout = new()
         {
             ChannelId = parsedMessage.ChatMessage.RoomId,
-            MessageTemplate = channel.ShoutoutTemplate ?? "Check out @{name} give {subject} a follow!",
+            MessageTemplate = channel.ShoutoutTemplate,
             Enabled = true,
             ShoutedUserId = newUser.Id
         };
@@ -345,7 +339,7 @@ public class TwitchMessageProcessingService
     {
         await using BotDbContext db = new();
 
-        channel.ShoutoutTemplate = null; // Reset to default
+        channel.ShoutoutTemplate = "Check out @{name}! {subject} {tense} streaming {game}: {title}. Go give {object} a follow!"; // Reset to default
         db.Channels.Update(channel);
         await db.SaveChangesAsync();
 
