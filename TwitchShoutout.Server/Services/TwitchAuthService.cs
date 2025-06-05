@@ -169,6 +169,19 @@ public class TwitchAuthService
                     
                     await DbContext.SaveChangesAsync(cancellationToken);
                     TokenRefreshed?.Invoke(this, new(user.Id, response.AccessToken));
+                    
+                    // Check if the user is the bot and update the JSON file
+                    if (user.Username.Equals(Globals.BotUsername, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Globals.AccessToken = response.AccessToken;
+                        Globals.RefreshToken = response.RefreshToken;
+                        Globals.ExpiresAt = DateTime.UtcNow.AddSeconds(response.ExpiresIn).ToString("o", CultureInfo.InvariantCulture);
+                        Globals.ExpiresIn = response.ExpiresIn.ToString();
+                        
+                        await File.WriteAllTextAsync(Globals.TokenFilePath, response.ToJson(), cancellationToken);
+
+                        Console.WriteLine("Bot token updated in .env file.");
+                    }
                 }
     
                 await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);

@@ -7,7 +7,7 @@ namespace TwitchShoutout.Server.Config;
 
 public static class Globals
 {
-    private const string TokenFilePath = "Properties/twitch_token.json";
+    internal const string TokenFilePath = "Properties/twitch_token.json";
     
     public static string AccessToken { get; internal set; }
     internal static string RefreshToken { get; set; }
