@@ -1,10 +1,7 @@
 using System.Configuration;
 using System.Globalization;
-using TwitchShoutout.Database;
-using TwitchShoutout.Database.Models;
 using TwitchShoutout.Server.Dtos;
 using TwitchShoutout.Server.Helpers;
-using TwitchShoutout.Server.Services;
 
 namespace TwitchShoutout.Server.Config;
 

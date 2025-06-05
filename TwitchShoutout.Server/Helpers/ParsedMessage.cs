@@ -1,5 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
-using TwitchLib.Client.Events;
+﻿using TwitchLib.Client.Events;
 using TwitchLib.Client.Models;
 using TwitchShoutout.Server.Config;
 

@@ -1,9 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using TwitchLib.Client;
-using TwitchLib.Client.Extensions;
 using TwitchShoutout.Database;
 using TwitchShoutout.Database.Models;
-using TwitchShoutout.Server.Dtos;
 using TwitchShoutout.Server.Helpers;
 
 namespace TwitchShoutout.Server.Services;
@@ -13,14 +11,14 @@ public class TwitchMessageProcessingService
     private readonly Dictionary<string, TwitchClient> _clients;
     private readonly TwitchApiService _apiService;
     // ChannelName, DateTime
-    private readonly Dictionary<string, DateTime> _channelShoutoutCooldowns = new();
+    internal readonly Dictionary<string, DateTime> _channelShoutoutCooldowns = new();
     // ChannelName + UserId, DateTime
-    private readonly Dictionary<string, DateTime> _userShoutoutCooldowns = new();
-    private readonly TimeSpan _channelCooldown = TimeSpan.FromMinutes(2);
+    internal readonly Dictionary<string, DateTime> _userShoutoutCooldowns = new();
+    internal readonly TimeSpan _channelCooldown = TimeSpan.FromMinutes(2);
     private readonly TimeSpan _userCooldown = TimeSpan.FromHours(1);
-    
-    private readonly Random _random = new();
-    private static readonly string[] AnnouncementColors = { "blue", "green", "orange", "purple", "primary" };
+
+    internal readonly Random _random = new();
+    internal static readonly string[] AnnouncementColors = { "blue", "green", "orange", "purple", "primary" };
 
 
     public TwitchMessageProcessingService(Dictionary<string, TwitchClient> clients, TwitchApiService apiService)
@@ -47,7 +45,7 @@ public class TwitchMessageProcessingService
             : throw new($"No client found for channel {channelName}");
     }
 
-    private void SendMessage(string channelName, string message)
+    internal void SendMessage(string channelName, string message)
     {
         TwitchClient client = GetClientForChannel(channelName);
         client.SendMessage(channelName, message);
@@ -199,8 +197,8 @@ public class TwitchMessageProcessingService
             Console.WriteLine(e);
         }
     }
-    
-    private string ReplaceTemplatePlaceholders(Channel channel, TwitchUser user)
+
+    internal static string ReplaceTemplatePlaceholders(Channel channel, TwitchUser user)
     {
         string shoutoutTemplate = channel.ShoutoutTemplate;
         shoutoutTemplate = shoutoutTemplate.Replace("{name}", user.DisplayName);
@@ -224,7 +222,9 @@ public class TwitchMessageProcessingService
         shoutoutTemplate = shoutoutTemplate.Replace("{tense}", user.IsLive ? beVerb.ToLower() : wasVerb.ToLower());
         shoutoutTemplate = shoutoutTemplate.Replace("{Tense}", user.IsLive ? beVerb : wasVerb);
 
-        if (string.IsNullOrWhiteSpace(user.Channel.Info.GameName) || string.IsNullOrWhiteSpace(user.Channel.Info.Title)){
+        ChannelInfo? channelInfo = user.Channel?.Info ?? user.Channel?.User.Channel.Info;
+        
+        if (string.IsNullOrWhiteSpace(channelInfo?.GameName) || string.IsNullOrWhiteSpace(channelInfo?.Title)){
             return $"Check out @{user.DisplayName} give ${user.Pronoun?.Object} a follow!";
         }
         
@@ -233,8 +233,8 @@ public class TwitchMessageProcessingService
         shoutoutTemplate = shoutoutTemplate.Replace("{object}", user.Pronoun?.Object.ToLower() ?? "Them");
         shoutoutTemplate = shoutoutTemplate.Replace("{Object}", user.Pronoun?.Object ?? "them");
         
-        shoutoutTemplate = shoutoutTemplate.Replace("{game}", user.Channel.Info.GameName);
-        shoutoutTemplate = shoutoutTemplate.Replace("{title}", user.Channel.Info.Title);
+        shoutoutTemplate = shoutoutTemplate.Replace("{game}", channelInfo.GameName);
+        shoutoutTemplate = shoutoutTemplate.Replace("{title}", channelInfo.Title);
         
         shoutoutTemplate = shoutoutTemplate.Replace("{link}", $"https://www.twitch.tv/{user.Username}");
         shoutoutTemplate = shoutoutTemplate.Replace("{username}", user.Username);

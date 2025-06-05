@@ -1,5 +1,4 @@
 ﻿using Newtonsoft.Json;
-using TwitchShoutout.Database.Models;
 
 namespace TwitchShoutout.Server.Dtos;
 
