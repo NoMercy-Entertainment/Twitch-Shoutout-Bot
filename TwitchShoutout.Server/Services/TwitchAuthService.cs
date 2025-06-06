@@ -18,12 +18,14 @@ namespace TwitchShoutout.Server.Services;
 public class TwitchAuthService
 {
     public static event EventHandler<TokenRefreshEventArgs>? TokenRefreshed;
-    private static BotDbContext DbContext { get; set; } = null!;
+    private readonly BotDbContext _dbContext;
+    private readonly ILogger<TwitchAuthService> _logger;
     private readonly RestClient _authClient;
 
-    public TwitchAuthService(BotDbContext dbContext)
+    public TwitchAuthService(BotDbContext dbContext, ILogger<TwitchAuthService> logger)
     {
-        DbContext = dbContext;
+        _dbContext = dbContext;
+        _logger = logger;
         _authClient = new(Globals.TwitchAuthUrl);
     }
 
@@ -125,9 +127,9 @@ public class TwitchAuthService
         return await ExecuteRequest<TwitchAuthResponse>(request, _authClient);
     }
 
-    public static async Task<TwitchAuthResponse?> RefreshAccessTokenAsync(string? refreshToken = null)
+    public async Task<TwitchAuthResponse?> RefreshAccessTokenAsync(string? refreshToken = null)
     {
-        Console.WriteLine("Refreshing Twitch access token...");
+        _logger.LogInformation("Refreshing Twitch access token...");
         using HttpClient client = new();
 
         HttpRequestMessage request = new(HttpMethod.Post, "https://id.twitch.tv/oauth2/token")
@@ -154,7 +156,7 @@ public class TwitchAuthService
     public async Task StartTokenRefreshForChannel(TwitchUser user, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(user.RefreshToken)) return;
-        Console.WriteLine($"Starting automatic token refresh for {user.Username}...");
+        _logger.LogInformation($"Starting automatic token refresh for {user.Username}...");
     
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -167,7 +169,7 @@ public class TwitchAuthService
                     user.RefreshToken = response.RefreshToken;
                     user.TokenExpiry = DateTime.UtcNow.AddSeconds(response.ExpiresIn);
                     
-                    await DbContext.SaveChangesAsync(cancellationToken);
+                    await _dbContext.SaveChangesAsync(cancellationToken);
                     TokenRefreshed?.Invoke(this, new(user.Id, response.AccessToken));
                     
                     // Check if the user is the bot and update the JSON file
@@ -180,7 +182,7 @@ public class TwitchAuthService
                         
                         await File.WriteAllTextAsync(Globals.TokenFilePath, response.ToJson(), cancellationToken);
 
-                        Console.WriteLine("Bot token updated in .env file.");
+                        _logger.LogInformation("Bot token updated in .env file.");
                     }
                 }
     
@@ -188,7 +190,7 @@ public class TwitchAuthService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error refreshing token for {user.Username}: {ex.Message}");
+                _logger.LogInformation($"Error refreshing token for {user.Username}: {ex.Message}");
                 await Task.Delay(TimeSpan.FromMinutes(5), cancellationToken);
             }
         }

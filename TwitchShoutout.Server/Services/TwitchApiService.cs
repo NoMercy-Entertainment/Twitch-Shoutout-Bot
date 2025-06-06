@@ -16,13 +16,15 @@ namespace TwitchShoutout.Server.Services;
 
 public class TwitchApiService
 {
-    private static BotDbContext DbContext { get; set; } = null!;
+    private readonly BotDbContext _dbContext;
     private readonly RestClient _client;
+    private readonly ILogger<TwitchApiService> _logger;
     private readonly PronounService _pronounService;
 
-    public TwitchApiService(BotDbContext dbContext, PronounService pronounService)
+    public TwitchApiService(BotDbContext dbContext, ILogger<TwitchApiService> logger, PronounService pronounService)
     {
-        DbContext = dbContext;
+        _dbContext = dbContext;
+        _logger = logger;
         _client = new(Globals.TwitchApiUrl);
         
         _pronounService = pronounService;
@@ -179,7 +181,7 @@ public class TwitchApiService
         ChannelResponse? moderators = await ExecuteTwitchRequest<ChannelResponse>(request);
         if (moderators == null || moderators.Data.Count == 0)
         {
-            Console.WriteLine($"No moderators found for user {userInfoId}.");
+            _logger.LogWarning($"No moderators found for user {userInfoId}.");
             return;
         }
         await UpsertModerators(userInfoId, moderators);
@@ -232,7 +234,7 @@ public class TwitchApiService
 
     private async Task UpsertUserData(TwitchUser user, bool enabled = false)
     {
-        await DbContext.TwitchUsers.Upsert(user)
+        await _dbContext.TwitchUsers.Upsert(user)
             .On(u => u.Id)
             .WhenMatched((_, newUser) => new()
             {
@@ -246,7 +248,7 @@ public class TwitchApiService
             })
             .RunAsync();
 
-        await DbContext.Channels.Upsert(user.Channel)
+        await _dbContext.Channels.Upsert(user.Channel)
             .On(c => c.Id)
             .WhenMatched((oldChannel, newChannel) => new()
             {
@@ -257,7 +259,7 @@ public class TwitchApiService
             })
             .RunAsync();
         
-        await DbContext.ChannelInfos.Upsert(user.Channel.Info)
+        await _dbContext.ChannelInfos.Upsert(user.Channel.Info)
             .On(c => c.Id)
             .WhenMatched((_, newInfo) => new()
             {
@@ -284,7 +286,7 @@ public class TwitchApiService
                 UserId = moderatorInfo.Id,
             };
 
-            await DbContext.ChannelModerators.Upsert(channelModerator)
+            await _dbContext.ChannelModerators.Upsert(channelModerator)
                 .On(m => new { m.ChannelId, m.UserId })
                 .WhenMatched((_, newModerator) => new()
                 {

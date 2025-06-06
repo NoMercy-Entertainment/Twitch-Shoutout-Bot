@@ -39,6 +39,6 @@ public class ParsedMessage
 
     public static ParsedMessage Parse(OnMessageReceivedArgs e)
     {
-        return new ParsedMessage(e);
+        return new(e);
     }
 }

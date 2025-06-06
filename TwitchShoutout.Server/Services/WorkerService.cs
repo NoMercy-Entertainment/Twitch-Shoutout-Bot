@@ -5,22 +5,25 @@ using TwitchShoutout.Database;
 using TwitchShoutout.Database.Models;
 using TwitchShoutout.Server.Config;
 using TwitchShoutout.Server.Helpers;
-using TwitchShoutout.Server.Services;
 
-namespace TwitchShoutout.Server;
+namespace TwitchShoutout.Server.Services;
 
-public class Worker : BackgroundService
+public class WorkerService : BackgroundService
 {
     private readonly Dictionary<string, TwitchClient> _clients = [];
     private readonly TwitchApiService _apiService;
     private readonly TwitchAuthService _authService;
+    private readonly ILogger<WorkerService> _logger;
+    private readonly IServiceProvider _serviceProvider;
     private TwitchMessageProcessingService _messageProcessingService = null!;
     private readonly BotDbContext _dbContext;
     private TwitchClient? _botClient;
 
-    public Worker(TwitchApiService apiService, TwitchAuthService authService, BotDbContext dbContext)
+    public WorkerService(TwitchApiService apiService, IServiceProvider serviceProvider, ILogger<WorkerService> logger, TwitchAuthService authService, BotDbContext dbContext)
     {
         _apiService = apiService;
+        _serviceProvider = serviceProvider;
+        _logger = logger;
         _authService = authService;
         _dbContext = dbContext;
     }
@@ -31,9 +34,12 @@ public class Worker : BackgroundService
         {
             // Initialize bot client first
             await InitializeBotClient(stoppingToken);
-
+            
             // Initialize message processing service with bot client
-            _messageProcessingService = new(_clients, _apiService);
+            using IServiceScope scope = _serviceProvider.CreateScope();
+            ILogger<TwitchMessageProcessingService> processingService = 
+                scope.ServiceProvider.GetRequiredService<ILogger<TwitchMessageProcessingService>>();
+            _messageProcessingService = new(_clients, processingService, _apiService);
 
             _ = Task.Run(async () =>
             {
@@ -50,7 +56,7 @@ public class Worker : BackgroundService
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine($"Error during shutdown: {e.Message}");
+                    _logger.LogError($"Error during shutdown: {e.Message}");
                 }
             });
 
@@ -62,7 +68,7 @@ public class Worker : BackgroundService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error in ExecuteAsync: {ex.Message}");
+            _logger.LogError($"Error in ExecuteAsync: {ex.Message}");
             throw;
         }
     }
@@ -102,16 +108,16 @@ public class Worker : BackgroundService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error during shutdown: {ex.Message}");
+            _logger.LogError($"Error during shutdown: {ex.Message}");
         }
     }
 
     private async Task InitializeBotClient(CancellationToken stoppingToken)
     {
-        Console.WriteLine("Initializing bot client...");
+        _logger.LogInformation("Initializing bot client...");
         if (TwitchAuthService.IsTokenExpired())
         {
-            await TwitchAuthService.RefreshAccessTokenAsync();
+            await _authService.RefreshAccessTokenAsync();
         }
 
         _botClient = new();
@@ -123,7 +129,7 @@ public class Worker : BackgroundService
 
     private async Task InitializeChannelClients(CancellationToken stoppingToken)
     {
-        Console.WriteLine("Initializing channel clients...");
+        _logger.LogInformation("Initializing channel clients...");
         List<Channel> enabledChannels = await _dbContext.Channels
             .Include(c => c.User)
             .Where(c => c.Enabled)
@@ -142,11 +148,9 @@ public class Worker : BackgroundService
         {
             if (_clients.ContainsKey(channel.Name))
             {
-                Console.WriteLine($"Already connected to channel: {channel.Name}");
+                _logger.LogInformation($"Already connected to channel: {channel.Name}");
                 return;
             }
-            
-            Console.WriteLine($"Connecting to channel: {channel.Name}");
             
             TwitchClient client = new();
             ConnectionCredentials credentials = new(Globals.BotUsername, Globals.AccessToken);
@@ -154,7 +158,7 @@ public class Worker : BackgroundService
 
             stoppingToken.Register(() =>
             {
-                Console.WriteLine("Stopping connection to channel: " + channel.Name);
+                _logger.LogInformation("Stopping connection to channel: " + channel.Name);
                 if (_clients.TryGetValue(channel.Name, out TwitchClient? existingClient))
                 {
                     existingClient.Disconnect();
@@ -169,13 +173,13 @@ public class Worker : BackgroundService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error connecting to channel {channel.Name}: {ex.Message}");
+            _logger.LogError($"Error connecting to channel {channel.Name}: {ex.Message}");
         }
     }
 
     private void SetupClientEventHandlers(TwitchClient client, Channel channel)
     {
-        Console.WriteLine($"Setting up event handlers for channel: {channel.Name}");
+        _logger.LogInformation($"Setting up event handlers for channel: {channel.Name}");
         client.OnMessageReceived += (_, e) =>
         {
             // if (e.ChatMessage.Username.Equals(Globals.BotUsername, StringComparison.OrdinalIgnoreCase))
@@ -194,12 +198,12 @@ public class Worker : BackgroundService
 
         client.OnConnected += (_, _) =>
         {
-            Console.WriteLine($"Connected to channel: {channel.Name}");
+            _logger.LogInformation($"Connected to channel: {channel.Name}");
             // client.SendMessage(channel.Name, "Bot connected and ready for shoutouts! 🎉");
         };
     }
 
-    private static async Task ConnectClient(TwitchClient client, string channelName, CancellationToken stoppingToken)
+    private async Task ConnectClient(TwitchClient client, string channelName, CancellationToken stoppingToken)
     {
         try
         {
@@ -207,13 +211,13 @@ public class Worker : BackgroundService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error connecting to {channelName}: {ex.Message}");
+            _logger.LogError($"Error connecting to {channelName}: {ex.Message}");
         }
     }
 
     private async Task StartTokenRefreshForChannels(CancellationToken stoppingToken)
     {
-        Console.WriteLine("Starting token refresh for all channels...");
+        _logger.LogInformation("Starting token refresh for all channels...");
         List<Channel> channels = await _dbContext.Channels
             .Include(c => c.User)
             .Where(c => c.Enabled)
@@ -228,7 +232,7 @@ public class Worker : BackgroundService
 
     private async Task StartAutomaticShoutouts(CancellationToken stoppingToken)
     {
-        Console.WriteLine("Starting automatic shoutouts...");
+        _logger.LogInformation("Starting automatic shoutouts...");
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -253,7 +257,7 @@ public class Worker : BackgroundService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in automatic shoutouts: {ex.Message}");
+                _logger.LogError($"Error in automatic shoutouts: {ex.Message}");
                 await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken); // Retry after 5 minutes
             }
         }
@@ -270,7 +274,7 @@ public class Worker : BackgroundService
             if (channel.LastShoutout.HasValue && (DateTime.UtcNow - channel.LastShoutout) < channelTimeout)
             {
                 TimeSpan timeLeft = channelTimeout - (DateTime.UtcNow - channel.LastShoutout.Value);
-                Console.WriteLine($"Channel shoutout is on cooldown.  Try again in {timeLeft.Minutes}m {timeLeft.Seconds}s.");
+                _logger.LogInformation($"Channel shoutout is on cooldown.  Try again in {timeLeft.Minutes}m {timeLeft.Seconds}s.");
                 return;
             }
 
@@ -279,7 +283,7 @@ public class Worker : BackgroundService
 
             if (availableShoutouts.Count == 0)
             {
-                Console.WriteLine($"No shoutouts available for channel {channel.Name}.");
+                _logger.LogInformation($"No shoutouts available for channel {channel.Name}.");
                 return;
             }
 
@@ -290,7 +294,7 @@ public class Worker : BackgroundService
 
             if (!eligibleShoutouts.Any())
             {
-                Console.WriteLine($"No eligible shoutouts available for channel {channel.Name} at this time.");
+                _logger.LogInformation($"No eligible shoutouts available for channel {channel.Name} at this time.");
                 return;
             }
 
@@ -312,7 +316,7 @@ public class Worker : BackgroundService
             }
             catch (Exception e)
             {
-                Console.WriteLine($"Failed to send shoutout for {shoutout.ShoutedUser.Username} in channel {channel.Name}: {e.Message}");
+                _logger.LogError($"Failed to send shoutout for {shoutout.ShoutedUser.Username} in channel {channel.Name}: {e.Message}");
                 return;
             }
 
@@ -321,11 +325,11 @@ public class Worker : BackgroundService
                 _messageProcessingService.Random.Next(TwitchMessageProcessingService.AnnouncementColors.Length)];
             await _apiService.SendAnnouncement(channel.Id, message, color);
 
-            Console.WriteLine($"Automatic shoutout given in {channel.Name} to {shoutout.ShoutedUser.Username}.");
+            _logger.LogInformation($"Automatic shoutout given in {channel.Name} to {shoutout.ShoutedUser.Username}.");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error executing shoutout for channel {channel.Name}: {ex.Message}");
+            _logger.LogError($"Error executing shoutout for channel {channel.Name}: {ex.Message}");
         }
     }
 }

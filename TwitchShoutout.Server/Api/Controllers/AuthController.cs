@@ -52,13 +52,13 @@ public class AuthenticationController(BotDbContext dbContext, TwitchAuthService 
             await twitchApiService.FetchModeration(userInfo.Id, twitchAuthResponse);;
 
             // Get Worker from singleton registration
-            Worker worker = HttpContext.RequestServices.GetRequiredService<Worker>();
+            WorkerService workerService = HttpContext.RequestServices.GetRequiredService<WorkerService>();
         
             // Connect to the user's channel
             Channel channel = userInfo.Channel;
             if (channel.Enabled)
             {
-                _ = Task.Run(() => worker.ConnectToChannel(channel, CancellationToken.None));
+                _ = Task.Run(() => workerService.ConnectToChannel(channel, CancellationToken.None));
             }
             
             _ = Task.Run(() => twitchAuthService.StartTokenRefreshForChannel(userInfo, CancellationToken.None));

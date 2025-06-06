@@ -10,6 +10,7 @@ public class TwitchMessageProcessingService
 {
     private readonly Dictionary<string, TwitchClient> _clients;
     private readonly TwitchApiService _apiService;
+    private readonly ILogger<TwitchMessageProcessingService> _logger;
     internal readonly TimeSpan ChannelCooldown = TimeSpan.FromMinutes(2);
     internal TimeSpan UserShoutoutInterval { get; set; } = TimeSpan.FromMinutes(10);
     internal readonly TimeSpan UserCooldown = TimeSpan.FromHours(1);
@@ -18,9 +19,10 @@ public class TwitchMessageProcessingService
     internal static readonly string[] AnnouncementColors = { "blue", "green", "orange", "purple", "primary" };
 
 
-    public TwitchMessageProcessingService(Dictionary<string, TwitchClient> clients, TwitchApiService apiService)
+    public TwitchMessageProcessingService(Dictionary<string, TwitchClient> clients, ILogger<TwitchMessageProcessingService> logger, TwitchApiService apiService)
     {
         _clients = clients;
+        _logger = logger;
         _apiService = apiService;
     }
 
@@ -166,7 +168,7 @@ public class TwitchMessageProcessingService
             if (channel.LastShoutout.HasValue && (DateTime.UtcNow - channel.LastShoutout) < channelTimeout)
             {
                 TimeSpan timeLeft = channelTimeout - (DateTime.UtcNow - channel.LastShoutout.Value);
-                Console.WriteLine($"Channel shoutout is on cooldown for {channel.Name}.  Try again in {timeLeft.Minutes}m {timeLeft.Seconds}s.");
+                _logger.LogInformation($"Channel shoutout is on cooldown for {channel.Name}.  Try again in {timeLeft.Minutes}m {timeLeft.Seconds}s.");
                 
                 string message = ReplaceTemplatePlaceholders(channel, user);
                 string color = AnnouncementColors[Random.Next(AnnouncementColors.Length)];
@@ -184,7 +186,7 @@ public class TwitchMessageProcessingService
             if (shoutout?.LastShoutout.HasValue == true && (DateTime.UtcNow - shoutout.LastShoutout) < TimeSpan.FromHours(1))
             {
                 TimeSpan timeLeft = UserCooldown - (DateTime.UtcNow - shoutout.LastShoutout.Value);
-                Console.WriteLine($"User shoutout is on cooldown for {shoutedUser}.  Try again in {timeLeft.Hours}h {timeLeft.Minutes}m.");
+                _logger.LogInformation($"User shoutout is on cooldown for {shoutedUser}.  Try again in {timeLeft.Hours}h {timeLeft.Minutes}m.");
                 
                 string message = ReplaceTemplatePlaceholders(channel, user);
                 string color = AnnouncementColors[Random.Next(AnnouncementColors.Length)];
@@ -198,7 +200,7 @@ public class TwitchMessageProcessingService
         }
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            _logger.LogError(e.Message);
         }
     }
 
@@ -393,7 +395,7 @@ public class TwitchMessageProcessingService
 
     public async Task HandleMessage(ParsedMessage parsedMessage, Channel channel)
     {
-        Console.WriteLine($"Processing message from {parsedMessage.ChatMessage.Username} in {channel.Name}: {parsedMessage.ChatMessage.Message}");
+        _logger.LogInformation($"Processing message from {parsedMessage.ChatMessage.Username} in {channel.Name}: {parsedMessage.ChatMessage.Message}");
         await using BotDbContext db = new();
 
         await Task.CompletedTask;

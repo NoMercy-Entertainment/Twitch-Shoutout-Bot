@@ -11,12 +11,14 @@ public class PronounService
 {
     private readonly RestClient _client;
     private readonly BotDbContext _dbContext;
+    private readonly ILogger<PronounService> _logger;
     private static readonly Dictionary<string, Pronoun> Pronouns = new();
 
-    public PronounService(BotDbContext dbContext)
+    public PronounService(BotDbContext dbContext, ILogger<PronounService> logger)
     {
-        _client = new("https://api.pronouns.alejo.io/v1/");
         _dbContext = dbContext;
+        _logger = logger;
+        _client = new("https://api.pronouns.alejo.io/v1/");
     }
 
     public async Task LoadPronouns()
@@ -50,11 +52,11 @@ public class PronounService
                     .RunAsync();
             }
 
-            Console.WriteLine($"Loaded {Pronouns.Count} pronouns");
+            _logger.LogInformation($"Loaded {Pronouns.Count} pronouns");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading pronouns: {ex.Message}");
+            _logger.LogError($"Error loading pronouns: {ex.Message}");
         }
     }
 

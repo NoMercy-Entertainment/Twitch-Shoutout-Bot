@@ -55,8 +55,8 @@ public static class ServiceConfiguration
         builder.Services.AddSingleton<PronounService>();
         builder.Services.AddSingleton<TwitchApiService>();
         builder.Services.AddSingleton<TwitchAuthService>();
-        builder.Services.AddHostedService<Worker>();
-        builder.Services.AddSingleton<Worker>();
+        builder.Services.AddHostedService<WorkerService>();
+        builder.Services.AddSingleton<WorkerService>();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddDirectoryBrowser();
         builder.Services.AddResponseCompression(options => options.EnableForHttps = true);

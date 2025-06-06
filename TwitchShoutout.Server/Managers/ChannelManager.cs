@@ -1,11 +1,12 @@
 ﻿using TwitchShoutout.Database;
 using TwitchShoutout.Database.Models;
+using TwitchShoutout.Server.Services;
 
 namespace TwitchShoutout.Server.Managers;
 
 public class ChannelManager
 {
-    private readonly Worker _worker;
+    private readonly WorkerService _workerService;
     private readonly BotDbContext _dbContext;
 
     public async Task JoinChannel(TwitchUser broadcaster)
@@ -22,6 +23,6 @@ public class ChannelManager
         await _dbContext.SaveChangesAsync();
 
         // Notify worker to connect to new channel
-        await _worker.ConnectToChannel(channel, CancellationToken.None);
+        await _workerService.ConnectToChannel(channel, CancellationToken.None);
     }
 }
